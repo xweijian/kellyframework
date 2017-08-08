@@ -38,6 +38,12 @@ type serviceMethod struct {
 	returnType reflect.Type
 }
 
+type errorResponseBody struct {
+	Code int         `json:"code"`
+	Msg  string      `json:"msg"`
+	Data interface{} `json:"data"`
+}
+
 func NewServiceHandler(ctxkey interface{}) *ServiceHandler {
 	return &ServiceHandler{
 		ctxkey,
@@ -47,7 +53,9 @@ func NewServiceHandler(ctxkey interface{}) *ServiceHandler {
 }
 
 func (h *ServiceHandler) RegisterMethodWithName(callee interface{}, name string) error {
-	// the ServiceHandler method prototype should be func(ServiceMethodContext, struct) (struct, error) .
+	// two method prototypes are accept:
+	// 1. 'func(*ServiceMethodContext, *struct) (interface{}, error)' which for normal use.
+	// 2. 'func(*ServiceMethodContext, *struct) (error)' which for custom response data such as a data stream.
 	calleeType := reflect.TypeOf(callee)
 	calleeValue := reflect.ValueOf(callee)
 
@@ -55,26 +63,32 @@ func (h *ServiceHandler) RegisterMethodWithName(callee interface{}, name string)
 		return fmt.Errorf("you should register a function or object method!")
 	}
 
-	if calleeType.NumIn() != 2 {
+	if calleeType.NumIn() == 2 {
+		if calleeType.In(0).Kind() != reflect.Ptr || calleeType.In(0).Elem().Name() != "ServiceMethodContext" {
+			return fmt.Errorf("the first argument should be type *ServiceMethodContext!")
+		}
+
+		if calleeType.In(1).Kind() != reflect.Ptr || calleeType.In(1).Elem().Kind() != reflect.Struct {
+			return fmt.Errorf("the second argument should be a struct pointer!")
+		}
+	} else {
 		return fmt.Errorf("the service method should have two arguments!")
 	}
 
-	if calleeType.NumOut() != 2 {
-		return fmt.Errorf("the service method should have two return values!")
-	}
+	if calleeType.NumOut() == 2 {
+		if calleeType.Out(0).Kind() != reflect.Interface || calleeType.Out(0).Name() != "" {
+			return fmt.Errorf("the first return value should be interface{}!")
+		}
 
-	if calleeType.In(0).Kind() != reflect.Ptr ||
-		strings.HasSuffix(calleeType.In(0).Name(), ".ServiceMethodContext") {
-		return fmt.Errorf("the first argument should be type ServiceMethodContext!")
-	}
-
-	if calleeType.In(1).Kind() != reflect.Ptr ||
-		strings.HasSuffix(calleeType.In(1).Name(), ".error") {
-		return fmt.Errorf("the second argument should be a struct!")
-	}
-
-	if calleeType.Out(0).Kind() != reflect.Ptr {
-		return fmt.Errorf("the first return value should be a struct!")
+		if calleeType.Out(1).Kind() != reflect.Interface || calleeType.Out(1).Name() != "error" {
+			return fmt.Errorf("the second return value should be error interface!")
+		}
+	} else if calleeType.NumOut() == 1 {
+		if calleeType.Out(0).Kind() != reflect.Interface || calleeType.Out(0).Name() != "error" {
+			return fmt.Errorf("the return value should be error interface!")
+		}
+	} else {
+		return fmt.Errorf("the service method should have one or two return values!")
 	}
 
 	h.methods[name] = &serviceMethod{
@@ -99,26 +113,26 @@ func newArgumentExtractor(req *http.Request) (extractor argument_extrator.Argume
 	return
 }
 
-type responseBody struct {
-	Code int         `json:"code"`
-	Msg  string      `json:"msg"`
-	Data interface{} `json:"data"`
-}
-
-func writeResponse(w http.ResponseWriter, tr trace.Trace, data interface{}, code int, msg string) {
-	if code != 200 {
-		tr.LazyPrintf("%s: %+v", msg, data)
-		tr.SetError()
-	} else {
-		tr.LazyPrintf(msg)
-	}
-
+func setJSONResponseHeader(w http.ResponseWriter) {
 	// Prevents Internet Explorer from MIME-sniffing a response away from the declared content-type
 	w.Header().Set("x-content-type-options", "nosniff")
 	w.Header().Set("Content-Type", "application/json")
+}
+
+func writeJSONResponse(w http.ResponseWriter, tr trace.Trace, data interface{}) {
+	tr.LazyPrintf("%+v", data)
+	setJSONResponseHeader(w)
+	enc := json.NewEncoder(w)
+	enc.Encode(data)
+}
+
+func writeErrorResponse(w http.ResponseWriter, tr trace.Trace, data interface{}, code int, msg string) {
+	tr.LazyPrintf("%s: %+v", msg, data)
+	tr.SetError()
+	setJSONResponseHeader(w)
 	w.WriteHeader(code)
 	enc := json.NewEncoder(w)
-	enc.Encode(&responseBody{code, msg, data})
+	enc.Encode(&errorResponseBody{code, msg, data})
 }
 
 func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []reflect.Value, panic interface{}) {
@@ -147,7 +161,7 @@ func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Req
 	methodName := extractMethodName(req.URL.Path)
 	method, ok := h.methods[methodName]
 	if !ok {
-		writeResponse(respWriter, tracer, nil, 404, "service method not found")
+		writeErrorResponse(respWriter, tracer, nil, 404, "service method not found")
 		return
 	}
 
@@ -155,16 +169,16 @@ func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Req
 	argExtractor := newArgumentExtractor(req)
 	args := reflect.New(method.argType.Elem())
 
-	err := argExtractor.ExtractTo(args.Interface())
-	if err != nil {
-		writeResponse(respWriter, tracer, err.Error(), 400, "parse arguments failed")
+	argError := argExtractor.ExtractTo(args.Interface())
+	if argError != nil {
+		writeErrorResponse(respWriter, tracer, argError.Error(), 400, "parse arguments failed")
 		return
 	}
 
 	if args.Elem().Kind() == reflect.Struct {
-		err = h.validator.Struct(args.Interface())
-		if err != nil {
-			writeResponse(respWriter, tracer, err.Error(), 400, "arguments invalid")
+		argError = h.validator.Struct(args.Interface())
+		if argError != nil {
+			writeErrorResponse(respWriter, tracer, argError.Error(), 400, "arguments invalid")
 			return
 		}
 	}
@@ -182,32 +196,50 @@ func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Req
 	})
 	duration := time.Now().Sub(beginTime)
 
+	// write return values or errors to response.
+	var methodReturn interface{}
+	var methodError interface{}
+	if len(out) == 2 {
+		methodReturn = out[0].Interface()
+		methodError = out[1].Interface()
+	} else if len(out) == 1 {
+		methodError = out[0].Interface()
+	} else if methodPanic == nil {
+		panic(fmt.Sprintf("return values error: %+v", out))
+	}
+
+	var respData interface{}
+	if methodPanic != nil {
+		respData = methodPanic
+		writeErrorResponse(respWriter, tracer, respData, 500, "service method panicked")
+	} else if methodError != nil {
+		respData = methodError.(error).Error()
+		writeErrorResponse(respWriter, tracer, respData, 500, "service method error")
+	} else if len(out) == 2 {
+		// write to response body as JSON encoded string while prototype has two return values, even when the response
+		// data is nil.
+		respData = methodReturn
+		writeJSONResponse(respWriter, tracer, respData)
+	}
+
+	// record some thing if recorder existed.
 	if h.recorderContextKey != nil {
 		recorder := req.Context().Value(h.recorderContextKey).(MethodCallRecorder)
 		if recorder != nil {
-			marshaled, err := json.Marshal(args.Interface())
+			marshaledArgs, err := json.Marshal(args.Interface())
 			if err != nil {
 				panic(err)
 			}
 
-			recorder.Record("serviceMethodArgument", string(marshaled))
+			marshaledData, err := json.Marshal(respData)
+			if err != nil {
+				panic(err)
+			}
+
+			recorder.Record("serviceMethodArgument", string(marshaledArgs))
+			recorder.Record("serviceMethodResponseData", string(marshaledData))
 			recorder.Record("serviceMethodBeginTime", beginTime.String())
 			recorder.Record("serviceMethodDuration", duration.Seconds())
 		}
-	}
-
-	// write return values or errors to response.
-	if methodPanic != nil {
-		writeResponse(respWriter, tracer, methodPanic, 500, "service method panicked")
-	} else {
-		retData := out[0].Interface()
-		retErr := out[1].Interface()
-		if retErr != nil {
-			writeResponse(respWriter, tracer, retErr.(error).Error(), 500, "service method error")
-		} else if retData != nil {
-			writeResponse(respWriter, tracer, retData, 200, "success")
-		}
-		// nothing to do if retData is nil because it means the service method has written custom data to response body
-		// already.
 	}
 }

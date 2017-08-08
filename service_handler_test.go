@@ -37,21 +37,23 @@ type validatorEnabled struct {
 	A int `validate:"required"`
 }
 
-func (e *empty) errorMethod(*ServiceMethodContext, *empty) (*empty, error) {
+func (e *empty) errorMethod(*ServiceMethodContext, *empty) (interface{}, error) {
 	return nil, fmt.Errorf("expected error")
 }
 
-func (e *empty) panicMethod(*ServiceMethodContext, *empty) (*empty, error) {
+func (e *empty) panicMethod(*ServiceMethodContext, *empty) (interface{}, error) {
 	panic("expected panic")
 	return nil, nil
 }
 
-func emptyFunction(*ServiceMethodContext, *empty) (*empty, error) {
-	return nil, nil
+func emptyFunction(*ServiceMethodContext, *empty) (interface{}, error) {
+	return &struct {
+		A int
+	}{1}, nil
 }
 
-func validatorEnabledFunction(*ServiceMethodContext, *validatorEnabled) (*empty, error) {
-	return nil, nil
+func validatorEnabledFunction(*ServiceMethodContext, *validatorEnabled) (error) {
+	return nil
 }
 
 func TestServiceHandler_RegisterMethodWithName(t *testing.T) {
@@ -66,13 +68,16 @@ func TestServiceHandler_RegisterMethodWithName(t *testing.T) {
 		wantErr bool
 	}{
 		{"not method", args{1, "fafads"}, true},
-		{"wrong method arguments", args{func() {}, "fafads"}, true},
-		{"wrong method return values", args{func(int, int) {}, "fafads"}, true},
+		{"wrong method return values", args{func(*ServiceMethodContext, *struct{}) int {return 0}, "fafads"}, true},
+		{"wrong method return values", args{func(*ServiceMethodContext, *struct{}) {}, "fafads"}, true},
+		{"wrong method prototype", args{func() {}, "fafads"}, true},
+		{"wrong method prototype", args{func(int, int) {}, "fafads"}, true},
 		{"wrong method prototype", args{func(*ServiceMethodContext, int) error { return nil }, "fafads"}, true},
 		{"wrong method prototype", args{func(*ServiceMethodContext, int) (int, error) { return 0, nil }, "fafads"}, true},
 		{"wrong method prototype", args{func(ServiceMethodContext, struct{}) (int, error) { return 0, nil }, "fafads"}, true},
 		{"wrong method prototype", args{func(*ServiceMethodContext, struct{}) (int, error) { return 0, nil }, "fafads"}, true},
 		{"wrong method prototype", args{func(*ServiceMethodContext, *struct{}) (int, error) { return 0, nil }, "fafads"}, true},
+		{"wrong method prototype", args{func(*ServiceMethodContext, *struct{}) (interface{}, *int) { return 0, nil }, "fafads"}, true},
 		{"empty function prototype", args{emptyFunction, "gsfdgs"}, false},
 		{"object member", args{e.errorMethod, "fafads"}, false},
 	}

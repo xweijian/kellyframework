@@ -7,19 +7,31 @@ import (
 )
 
 func Test_logger(t *testing.T) {
-	options := &AccessLogOptions{
-		"/tmp/abc",
-		100,
-		"3s",
-		[]string{
-			"a", "b", "c", "d",
-		},
-	}
+	t.Run("new logger error options", func(t *testing.T) {
+		_, err := newLogger(&AccessLogOptions{
+			"/tmp/abc",
+			100,
+			"3ss",
+			[]string{
+				"a", "b", "c", "d",
+			},
+		})
+		if err == nil {
+			t.Errorf("newLogger() error = %v", err)
+			return
+		}
+	})
 
 	var logger *logger
-
 	t.Run("new logger", func(t *testing.T) {
-		l, err := newLogger(options)
+		l, err := newLogger(&AccessLogOptions{
+			"/tmp/abc",
+			100,
+			"3s",
+			[]string{
+				"a", "b", "c", "d",
+			},
+		})
 		if err != nil {
 			t.Errorf("newLogger() error = %v", err)
 			return
@@ -30,6 +42,17 @@ func Test_logger(t *testing.T) {
 
 	t.Run("write log row", func(t *testing.T) {
 		row := newAccessLogRow()
+		row.SetRowField("a", 1)
+		row.SetRowField("b", "fsafas")
+		row.SetRowField("c", &struct {
+			a int
+			b string
+			c interface{}
+		}{1, "abc", nil})
+		row.SetRowField("d", nil)
+		logger.writeLogRow(row)
+
+		row = newAccessLogRow()
 		row.SetRowField("a", 1)
 		row.SetRowField("b", "fsafas")
 		row.SetRowField("c", &struct {
