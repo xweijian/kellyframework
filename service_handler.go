@@ -60,35 +60,35 @@ func (h *ServiceHandler) RegisterMethodWithName(callee interface{}, name string)
 	calleeValue := reflect.ValueOf(callee)
 
 	if calleeType.Kind() != reflect.Func {
-		return fmt.Errorf("you should register a function or object method!")
+		return fmt.Errorf("you should register a function or object method")
 	}
 
 	if calleeType.NumIn() == 2 {
 		if calleeType.In(0).Kind() != reflect.Ptr || calleeType.In(0).Elem().Name() != "ServiceMethodContext" {
-			return fmt.Errorf("the first argument should be type *ServiceMethodContext!")
+			return fmt.Errorf("the first argument should be type *ServiceMethodContext")
 		}
 
 		if calleeType.In(1).Kind() != reflect.Ptr || calleeType.In(1).Elem().Kind() != reflect.Struct {
-			return fmt.Errorf("the second argument should be a struct pointer!")
+			return fmt.Errorf("the second argument should be a struct pointer")
 		}
 	} else {
-		return fmt.Errorf("the service method should have two arguments!")
+		return fmt.Errorf("the service method should have two arguments")
 	}
 
 	if calleeType.NumOut() == 2 {
 		if calleeType.Out(0).Kind() != reflect.Interface || calleeType.Out(0).Name() != "" {
-			return fmt.Errorf("the first return value should be interface{}!")
+			return fmt.Errorf("the first return value should be interface{}")
 		}
 
 		if calleeType.Out(1).Kind() != reflect.Interface || calleeType.Out(1).Name() != "error" {
-			return fmt.Errorf("the second return value should be error interface!")
+			return fmt.Errorf("the second return value should be error interface")
 		}
 	} else if calleeType.NumOut() == 1 {
 		if calleeType.Out(0).Kind() != reflect.Interface || calleeType.Out(0).Name() != "error" {
-			return fmt.Errorf("the return value should be error interface!")
+			return fmt.Errorf("the return value should be error interface")
 		}
 	} else {
-		return fmt.Errorf("the service method should have one or two return values!")
+		return fmt.Errorf("the service method should have one or two return values")
 	}
 
 	h.methods[name] = &serviceMethod{
