@@ -6,6 +6,7 @@ import (
 	"time"
 	"io"
 	"github.com/Sirupsen/logrus"
+	"strconv"
 )
 
 type AccessLogDecorator struct {
@@ -22,7 +23,7 @@ type AccessLogRow struct {
 type AccessLogRowFiller interface{}
 type AccessLogRowFillerFactory func(*AccessLogRow) AccessLogRowFiller
 
-func (row *AccessLogRow) SetRowField(field string, value interface{}) {
+func (row *AccessLogRow) SetRowField(field string, value string) {
 	row.fields[field] = value
 }
 
@@ -36,7 +37,7 @@ func (w *statusResponseWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 }
 
-func NewAccessLogDecorator(handler http.Handler, logWriter io.WriteCloser, rowFillerContextKey interface{},
+func NewAccessLogDecorator(handler http.Handler, logWriter io.Writer, rowFillerContextKey interface{},
 	rowFillerFactory AccessLogRowFillerFactory) *AccessLogDecorator {
 	logger := logrus.New()
 	logger.Out = logWriter
@@ -46,10 +47,6 @@ func NewAccessLogDecorator(handler http.Handler, logWriter io.WriteCloser, rowFi
 		rowFillerFactory,
 		logger,
 	}
-}
-
-func (d *AccessLogDecorator) Stop() {
-	d.logger.Out.(io.WriteCloser).Close()
 }
 
 func (d *AccessLogDecorator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -71,10 +68,10 @@ func (d *AccessLogDecorator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d.Handler.ServeHTTP(sw, r)
 
 	row.SetRowField("beginTime", beginTime.String())
-	row.SetRowField("status", sw.status)
-	row.SetRowField("duration", time.Now().Sub(beginTime).Seconds())
+	row.SetRowField("status", strconv.Itoa(sw.status))
+	row.SetRowField("duration", strconv.FormatFloat(time.Now().Sub(beginTime).Seconds(), 'f', -1, 64))
 	row.SetRowField("remote", r.RemoteAddr)
-	row.SetRowField("method", r.Method)
+	row.SetRowField("requestMethod", r.Method)
 	row.SetRowField("uri", r.URL.RequestURI())
 	logrus.WithFields(row.fields).Info()
 }

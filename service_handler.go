@@ -13,23 +13,24 @@ import (
 	"encoding/json"
 	"golang.org/x/net/trace"
 	"runtime"
+	"strconv"
 )
 
 type ServiceMethodContext struct {
-	context            context.Context
-	remoteAddr         string
-	requestBodyReader  io.ReadCloser
-	responseBodyWriter io.Writer
+	Context            context.Context
+	RemoteAddr         string
+	RequestBodyReader  io.ReadCloser
+	ResponseBodyWriter io.Writer
 }
 
-type MethodCallRecorder interface {
-	Record(field string, value interface{})
+type MethodCallLogger interface {
+	Record(field string, value string)
 }
 
 type ServiceHandler struct {
-	recorderContextKey interface{}
-	methods            map[string]*serviceMethod
-	validator          *validator.Validate
+	methodCallLoggerContextKey interface{}
+	methods                    map[string]*serviceMethod
+	validator                  *validator.Validate
 }
 
 type serviceMethod struct {
@@ -39,14 +40,14 @@ type serviceMethod struct {
 }
 
 type errorResponseBody struct {
-	Code int         `json:"code"`
-	Msg  string      `json:"msg"`
-	Data interface{} `json:"data"`
+	Code    int         `json:"code"`
+	Summary string      `json:"summary"`
+	Data    interface{} `json:"data"`
 }
 
-func NewServiceHandler(ctxkey interface{}) *ServiceHandler {
+func NewServiceHandler(methodCallLoggerContextKey interface{}) *ServiceHandler {
 	return &ServiceHandler{
-		ctxkey,
+		methodCallLoggerContextKey,
 		make(map[string]*serviceMethod),
 		validator.New(),
 	}
@@ -126,13 +127,13 @@ func writeJSONResponse(w http.ResponseWriter, tr trace.Trace, data interface{}) 
 	enc.Encode(data)
 }
 
-func writeErrorResponse(w http.ResponseWriter, tr trace.Trace, data interface{}, code int, msg string) {
-	tr.LazyPrintf("%s: %+v", msg, data)
+func writeErrorResponse(w http.ResponseWriter, tr trace.Trace, data interface{}, code int, summary string) {
+	tr.LazyPrintf("%s: %+v", summary, data)
 	tr.SetError()
 	setJSONResponseHeader(w)
 	w.WriteHeader(code)
 	enc := json.NewEncoder(w)
-	enc.Encode(&errorResponseBody{code, msg, data})
+	enc.Encode(&errorResponseBody{code, summary, data})
 }
 
 func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []reflect.Value, panic interface{}) {
@@ -205,6 +206,7 @@ func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Req
 	} else if len(out) == 1 {
 		methodError = out[0].Interface()
 	} else if methodPanic == nil {
+		// the method prototype is neither 1 return value nor 2 return values, it is unlikely
 		panic(fmt.Sprintf("return values error: %+v", out))
 	}
 
@@ -222,10 +224,10 @@ func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Req
 		writeJSONResponse(respWriter, tracer, respData)
 	}
 
-	// record some thing if recorder existed.
-	if h.recorderContextKey != nil {
-		recorder := req.Context().Value(h.recorderContextKey).(MethodCallRecorder)
-		if recorder != nil {
+	// record some thing if logger existed.
+	if h.methodCallLoggerContextKey != nil {
+		logger := req.Context().Value(h.methodCallLoggerContextKey).(MethodCallLogger)
+		if logger != nil {
 			marshaledArgs, err := json.Marshal(args.Interface())
 			if err != nil {
 				panic(err)
@@ -236,10 +238,10 @@ func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Req
 				panic(err)
 			}
 
-			recorder.Record("serviceMethodArgument", string(marshaledArgs))
-			recorder.Record("serviceMethodResponseData", string(marshaledData))
-			recorder.Record("serviceMethodBeginTime", beginTime.String())
-			recorder.Record("serviceMethodDuration", duration.Seconds())
+			logger.Record("methodCallArgument", string(marshaledArgs))
+			logger.Record("methodCallResponseData", string(marshaledData))
+			logger.Record("methodCallBeginTime", beginTime.String())
+			logger.Record("methodCallDuration", strconv.FormatFloat(duration.Seconds(), 'f', -1, 64))
 		}
 	}
 }
