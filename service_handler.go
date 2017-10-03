@@ -36,7 +36,6 @@ type ServiceHandler struct {
 type serviceMethod struct {
 	value      *reflect.Value
 	argType    reflect.Type
-	returnType reflect.Type
 }
 
 type errorResponseBody struct {
@@ -55,7 +54,7 @@ func NewServiceHandler(methodCallLoggerContextKey interface{}) *ServiceHandler {
 
 func (h *ServiceHandler) RegisterMethodWithName(callee interface{}, name string) error {
 	// two method prototypes are accept:
-	// 1. 'func(*ServiceMethodContext, *struct) (*struct, error)' which for normal use.
+	// 1. 'func(*ServiceMethodContext, *struct) (anything, error)' which for normal use.
 	// 2. 'func(*ServiceMethodContext, *struct) (error)' which for custom response data such as a data stream.
 	calleeType := reflect.TypeOf(callee)
 	calleeValue := reflect.ValueOf(callee)
@@ -77,10 +76,6 @@ func (h *ServiceHandler) RegisterMethodWithName(callee interface{}, name string)
 	}
 
 	if calleeType.NumOut() == 2 {
-		if calleeType.Out(0).Kind() != reflect.Ptr || calleeType.Out(0).Elem().Kind() != reflect.Struct{
-			return fmt.Errorf("the first return value should be a struct pointer")
-		}
-
 		if calleeType.Out(1).Kind() != reflect.Interface || calleeType.Out(1).Name() != "error" {
 			return fmt.Errorf("the second return value should be error interface")
 		}
@@ -95,7 +90,6 @@ func (h *ServiceHandler) RegisterMethodWithName(callee interface{}, name string)
 	h.methods[name] = &serviceMethod{
 		&calleeValue,
 		calleeType.In(1),
-		calleeType.Out(0),
 	}
 
 	return nil

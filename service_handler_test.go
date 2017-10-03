@@ -76,8 +76,8 @@ func TestServiceHandler_RegisterMethodWithName(t *testing.T) {
 		{"wrong method prototype", args{func(*ServiceMethodContext, int) (int, error) { return 0, nil }, "fafads"}, true},
 		{"wrong method prototype", args{func(ServiceMethodContext, struct{}) (int, error) { return 0, nil }, "fafads"}, true},
 		{"wrong method prototype", args{func(*ServiceMethodContext, struct{}) (int, error) { return 0, nil }, "fafads"}, true},
-		{"wrong method prototype", args{func(*ServiceMethodContext, *struct{}) (int, error) { return 0, nil }, "fafads"}, true},
 		{"wrong method prototype", args{func(*ServiceMethodContext, *struct{}) (*struct{}, *int) { return nil, nil }, "fafads"}, true},
+		{"wrong method prototype", args{func(*ServiceMethodContext, *struct{}) (int, error) { return 0, nil }, "fafads"}, false},
 		{"empty function prototype", args{emptyFunction, "gsfdgs"}, false},
 		{"object member", args{e.errorMethod, "fafads"}, false},
 	}
