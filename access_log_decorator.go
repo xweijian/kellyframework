@@ -40,6 +40,7 @@ func (w *statusResponseWriter) WriteHeader(status int) {
 func NewAccessLogDecorator(handler http.Handler, logWriter io.Writer, rowFillerContextKey interface{},
 	rowFillerFactory AccessLogRowFillerFactory) *AccessLogDecorator {
 	logger := logrus.New()
+	logger.Formatter = &logrus.TextFormatter{DisableTimestamp: true}
 	logger.Out = logWriter
 	return &AccessLogDecorator{
 		handler,
@@ -62,16 +63,20 @@ func (d *AccessLogDecorator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	sw := &statusResponseWriter{
 		w,
-		0,
+		http.StatusOK,
 	}
 
 	d.Handler.ServeHTTP(sw, r)
 
-	row.SetRowField("beginTime", beginTime.String())
+	row.SetRowField("beginTime", beginTime.Format("2006-01-02 03:04:05.999999999"))
 	row.SetRowField("status", strconv.Itoa(sw.status))
 	row.SetRowField("duration", strconv.FormatFloat(time.Now().Sub(beginTime).Seconds(), 'f', -1, 64))
 	row.SetRowField("remote", r.RemoteAddr)
 	row.SetRowField("requestMethod", r.Method)
 	row.SetRowField("uri", r.URL.RequestURI())
-	logrus.WithFields(row.fields).Info()
+	if sw.status <= http.StatusBadRequest {
+		d.logger.WithFields(row.fields).Info()
+	} else {
+		d.logger.WithFields(row.fields).Error()
+	}
 }

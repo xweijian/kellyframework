@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"code.corp.elong.com/aos/kellyframework/argument_extrator"
-	"strings"
 	"context"
 	"io"
 	"time"
@@ -29,13 +28,13 @@ type MethodCallLogger interface {
 
 type ServiceHandler struct {
 	methodCallLoggerContextKey interface{}
-	methods                    map[string]*serviceMethod
+	method                     *serviceMethod
 	validator                  *validator.Validate
 }
 
 type serviceMethod struct {
-	value      *reflect.Value
-	argType    reflect.Type
+	value   reflect.Value
+	argType reflect.Type
 }
 
 type errorResponseBody struct {
@@ -44,55 +43,58 @@ type errorResponseBody struct {
 	Data    interface{} `json:"data"`
 }
 
-func NewServiceHandler(methodCallLoggerContextKey interface{}) *ServiceHandler {
-	return &ServiceHandler{
-		methodCallLoggerContextKey,
-		make(map[string]*serviceMethod),
-		validator.New(),
-	}
-}
-
-func (h *ServiceHandler) RegisterMethodWithName(callee interface{}, name string) error {
-	// two method prototypes are accept:
-	// 1. 'func(*ServiceMethodContext, *struct) (anything, error)' which for normal use.
-	// 2. 'func(*ServiceMethodContext, *struct) (error)' which for custom response data such as a data stream.
-	calleeType := reflect.TypeOf(callee)
-	calleeValue := reflect.ValueOf(callee)
-
-	if calleeType.Kind() != reflect.Func {
-		return fmt.Errorf("you should register a function or object method")
+func checkServiceMethodPrototype(methodType reflect.Type) error {
+	if methodType.Kind() != reflect.Func {
+		return fmt.Errorf("you should provide a function or object method")
 	}
 
-	if calleeType.NumIn() == 2 {
-		if calleeType.In(0).Kind() != reflect.Ptr || calleeType.In(0).Elem().Name() != "ServiceMethodContext" {
+	if methodType.NumIn() == 2 {
+		if methodType.In(0).Kind() != reflect.Ptr || methodType.In(0).Elem().Name() != "ServiceMethodContext" {
 			return fmt.Errorf("the first argument should be type *ServiceMethodContext")
 		}
 
-		if calleeType.In(1).Kind() != reflect.Ptr || calleeType.In(1).Elem().Kind() != reflect.Struct {
+		if methodType.In(1).Kind() != reflect.Ptr || methodType.In(1).Elem().Kind() != reflect.Struct {
 			return fmt.Errorf("the second argument should be a struct pointer")
 		}
 	} else {
 		return fmt.Errorf("the service method should have two arguments")
 	}
 
-	if calleeType.NumOut() == 2 {
-		if calleeType.Out(1).Kind() != reflect.Interface || calleeType.Out(1).Name() != "error" {
+	if methodType.NumOut() == 2 {
+		if methodType.Out(1).Kind() != reflect.Interface || methodType.Out(1).Name() != "error" {
 			return fmt.Errorf("the second return value should be error interface")
 		}
-	} else if calleeType.NumOut() == 1 {
-		if calleeType.Out(0).Kind() != reflect.Interface || calleeType.Out(0).Name() != "error" {
+	} else if methodType.NumOut() == 1 {
+		if methodType.Out(0).Kind() != reflect.Interface || methodType.Out(0).Name() != "error" {
 			return fmt.Errorf("the return value should be error interface")
 		}
 	} else {
 		return fmt.Errorf("the service method should have one or two return values")
 	}
 
-	h.methods[name] = &serviceMethod{
-		&calleeValue,
-		calleeType.In(1),
+	return nil
+}
+
+func NewServiceHandler(method interface{}, methodCallLoggerContextKey interface{}) (h *ServiceHandler, err error) {
+	// two method prototypes are accept:
+	// 1. 'func(*ServiceMethodContext, *struct) (anything, error)' which for normal use.
+	// 2. 'func(*ServiceMethodContext, *struct) (error)' which for custom response data such as a data stream.
+	methodType := reflect.TypeOf(method)
+	err = checkServiceMethodPrototype(methodType)
+	if err != nil {
+		return
 	}
 
-	return nil
+	h = &ServiceHandler{
+		methodCallLoggerContextKey,
+		&serviceMethod{
+			reflect.ValueOf(method),
+			methodType.In(1),
+		},
+		validator.New(),
+	}
+
+	return
 }
 
 func newArgumentExtractor(req *http.Request) (extractor argument_extrator.ArgumentExtractor) {
@@ -139,11 +141,6 @@ func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []refle
 	return
 }
 
-func extractMethodName(path string) string {
-	parts := strings.Split(path, "/")
-	return parts[len(parts)-1]
-}
-
 func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Request) {
 	pc, _, _, ok := runtime.Caller(0)
 	if !ok {
@@ -153,41 +150,34 @@ func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Req
 	tracer := trace.New(runtime.FuncForPC(pc).Name(), req.URL.Path)
 	defer tracer.Finish()
 
-	methodName := extractMethodName(req.URL.Path)
-	method, ok := h.methods[methodName]
-	if !ok {
-		writeErrorResponse(respWriter, tracer, nil, 404, "service method not found")
-		return
-	}
-
 	// extract arguments.
 	argExtractor := newArgumentExtractor(req)
-	args := reflect.New(method.argType.Elem())
+	arg := reflect.New(h.method.argType.Elem())
 
-	argError := argExtractor.ExtractTo(args.Interface())
+	argError := argExtractor.ExtractTo(arg.Interface())
 	if argError != nil {
-		writeErrorResponse(respWriter, tracer, argError.Error(), 400, "parse arguments failed")
+		writeErrorResponse(respWriter, tracer, argError.Error(), 400, "parse argument failed")
 		return
 	}
 
-	if args.Elem().Kind() == reflect.Struct {
-		argError = h.validator.Struct(args.Interface())
+	if arg.Elem().Kind() == reflect.Struct {
+		argError = h.validator.Struct(arg.Interface())
 		if argError != nil {
-			writeErrorResponse(respWriter, tracer, argError.Error(), 400, "arguments invalid")
+			writeErrorResponse(respWriter, tracer, argError.Error(), 400, "argument invalid")
 			return
 		}
 	}
 
 	// do method call.
 	beginTime := time.Now()
-	out, methodPanic := doServiceMethodCall(method, []reflect.Value{
+	out, methodPanic := doServiceMethodCall(h.method, []reflect.Value{
 		reflect.ValueOf(&ServiceMethodContext{
 			req.Context(),
 			req.RemoteAddr,
 			req.Body,
 			respWriter,
 		}),
-		args,
+		arg,
 	})
 	duration := time.Now().Sub(beginTime)
 
@@ -222,7 +212,7 @@ func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Req
 	if h.methodCallLoggerContextKey != nil {
 		logger := req.Context().Value(h.methodCallLoggerContextKey).(MethodCallLogger)
 		if logger != nil {
-			marshaledArgs, err := json.Marshal(args.Interface())
+			marshaledArgs, err := json.Marshal(arg.Interface())
 			if err != nil {
 				panic(err)
 			}
@@ -234,7 +224,7 @@ func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Req
 
 			logger.Record("methodCallArgument", string(marshaledArgs))
 			logger.Record("methodCallResponseData", string(marshaledData))
-			logger.Record("methodCallBeginTime", beginTime.String())
+			logger.Record("methodCallBeginTime", beginTime.Format("2006-01-02 03:04:05.999999999"))
 			logger.Record("methodCallDuration", strconv.FormatFloat(duration.Seconds(), 'f', -1, 64))
 		}
 	}
