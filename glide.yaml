@@ -1,0 +1,8 @@
+package: code.corp.elong.com/aos/kellyframework
+import:
+- package: github.com/Sirupsen/logrus
+  version: ^1.0.3
+- package: github.com/gorilla/schema
+- package: golang.org/x/net/trace
+- package: gopkg.in/go-playground/validator.v9
+  version: ^9.7.0
