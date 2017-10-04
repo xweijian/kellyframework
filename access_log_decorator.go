@@ -74,7 +74,7 @@ func (d *AccessLogDecorator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	row.SetRowField("remote", r.RemoteAddr)
 	row.SetRowField("requestMethod", r.Method)
 	row.SetRowField("uri", r.URL.RequestURI())
-	if sw.status <= http.StatusBadRequest {
+	if sw.status < http.StatusBadRequest {
 		d.logger.WithFields(row.fields).Info()
 	} else {
 		d.logger.WithFields(row.fields).Error()
