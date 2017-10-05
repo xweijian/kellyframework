@@ -13,10 +13,12 @@ import (
 	"golang.org/x/net/trace"
 	"runtime"
 	"strconv"
+	"net/url"
 )
 
 type ServiceMethodContext struct {
 	Context            context.Context
+	URL                *url.URL
 	RemoteAddr         string
 	RequestBodyReader  io.ReadCloser
 	ResponseBodyWriter io.Writer
@@ -173,6 +175,7 @@ func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Req
 	out, methodPanic := doServiceMethodCall(h.method, []reflect.Value{
 		reflect.ValueOf(&ServiceMethodContext{
 			req.Context(),
+			req.URL,
 			req.RemoteAddr,
 			req.Body,
 			respWriter,
