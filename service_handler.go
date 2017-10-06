@@ -11,7 +11,6 @@ import (
 	"gopkg.in/go-playground/validator.v9"
 	"encoding/json"
 	"golang.org/x/net/trace"
-	"runtime"
 	"strconv"
 )
 
@@ -42,6 +41,8 @@ type errorResponseBody struct {
 	Summary string      `json:"summary"`
 	Data    interface{} `json:"data"`
 }
+
+const traceFamily = "kellyframework.ServiceHandler"
 
 func checkServiceMethodPrototype(methodType reflect.Type) error {
 	if methodType.Kind() != reflect.Func {
@@ -142,12 +143,7 @@ func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []refle
 }
 
 func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Request) {
-	pc, _, _, ok := runtime.Caller(0)
-	if !ok {
-		panic("can not ascend the stack!")
-	}
-
-	tracer := trace.New(runtime.FuncForPC(pc).Name(), req.URL.Path)
+	tracer := trace.New(traceFamily, req.URL.Path)
 	defer tracer.Finish()
 
 	// extract arguments.
