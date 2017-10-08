@@ -31,6 +31,11 @@ type ServiceHandler struct {
 	validator                  *validator.Validate
 }
 
+type PathFunctionPair struct {
+	Path     string
+	Function interface{}
+}
+
 type serviceMethod struct {
 	value   reflect.Value
 	argType reflect.Type
@@ -96,6 +101,20 @@ func NewServiceHandler(method interface{}, methodCallLoggerContextKey interface{
 	}
 
 	return
+}
+
+func RegisterFunctionsToServeMux(mux *http.ServeMux, methodCallLoggerContextKey interface{},
+	pairs []*PathFunctionPair) error {
+	for _, pair := range pairs {
+		handler, err := NewServiceHandler(pair.Function, methodCallLoggerContextKey)
+		if err != nil {
+			return err
+		}
+
+		mux.Handle(pair.Path, handler)
+	}
+
+	return nil
 }
 
 func newArgumentExtractor(req *http.Request) (extractor argument_extrator.ArgumentExtractor) {
