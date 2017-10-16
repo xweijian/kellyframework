@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"golang.org/x/net/trace"
 	"strconv"
+	"runtime/debug"
 )
 
 type ServiceMethodContext struct {
@@ -45,6 +46,11 @@ type errorResponseBody struct {
 	Code    int         `json:"code"`
 	Summary string      `json:"summary"`
 	Data    interface{} `json:"data"`
+}
+
+type panicStack struct {
+	Panic string `json:"panic"`
+	Stack string `json:"stack"`
 }
 
 const traceFamily = "kellyframework.ServiceHandler"
@@ -152,9 +158,14 @@ func writeErrorResponse(w http.ResponseWriter, tr trace.Trace, data interface{},
 	enc.Encode(&errorResponseBody{code, summary, data})
 }
 
-func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []reflect.Value, panic interface{}) {
+func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []reflect.Value, ps *panicStack) {
 	defer func() {
-		panic = recover()
+		if panicInfo := recover(); panicInfo != nil {
+			ps = &panicStack{
+				fmt.Sprintf("%s", panicInfo),
+				fmt.Sprintf("%s", debug.Stack()),
+			}
+		}
 	}()
 
 	out = method.value.Call(in)
