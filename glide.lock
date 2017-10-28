@@ -1,31 +1,33 @@
-hash: 40edc8f3aadb5a5f4ee36813875bef7ca4a36e536466d08388cb0f47ab841107
-updated: 2017-10-04T23:21:34.043298833+08:00
+hash: 49d95486fd22138ef01a2c84ff8204aa6f4eb0f9df56eeca8325bd6d3d28d22b
+updated: 2017-10-28T19:44:46.86015225+08:00
 imports:
 - name: github.com/go-playground/locales
-  version: 1e5f1161c6416a5ff48840eb8724a394e48cc534
+  version: e4cbcb5d0652150d40ad0646651076b6bd2be4f6
   subpackages:
   - currency
 - name: github.com/go-playground/universal-translator
   version: 71201497bace774495daed26a3874fd339e0b538
 - name: github.com/gorilla/schema
   version: 8b1100835db5bbdae88541510f70d114b91a7e4d
+- name: github.com/julienschmidt/httprouter
+  version: e1b9828bc9e5904baec057a154c09ca40fe7fae0
 - name: github.com/Sirupsen/logrus
   version: f006c2ac4710855cf0f916dd6b77acf6b048dc6e
 - name: golang.org/x/crypto
-  version: 9419663f5a44be8b34ca85f08abc5fe1be11f8a3
+  version: 2509b142fb2b797aa7587dad548f113b2c0f20ce
   subpackages:
   - ssh/terminal
 - name: golang.org/x/net
-  version: a04bdaca5b32abe1c069418fb7088ae607de5bd0
+  version: c73622c77280266305273cb545f54516ced95b93
   subpackages:
   - context
   - internal/timeseries
   - trace
 - name: golang.org/x/sys
-  version: 314a259e304ff91bd6985da2a7149bbf91237993
+  version: 661970f62f5897bc0cd5fdca7e087ba8a98a8fa1
   subpackages:
   - unix
   - windows
 - name: gopkg.in/go-playground/validator.v9
-  version: a021b2ec9a8a8bb970f3f15bc42617cb520e8a64
+  version: 1304298bf10d085adec514b076772a79c9cadb6b
 testImports: []

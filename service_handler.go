@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"fmt"
 	"net/http"
-	"code.corp.elong.com/aos/kellyframework/argument_extrator"
 	"context"
 	"io"
 	"time"
@@ -13,6 +12,8 @@ import (
 	"golang.org/x/net/trace"
 	"strconv"
 	"runtime/debug"
+	"github.com/julienschmidt/httprouter"
+	"github.com/gorilla/schema"
 )
 
 type ServiceMethodContext struct {
@@ -37,6 +38,12 @@ type PathFunctionPair struct {
 	Function interface{}
 }
 
+type MethodPathFunctionTriple struct {
+	Method   string
+	Path     string
+	Function interface{}
+}
+
 type serviceMethod struct {
 	value   reflect.Value
 	argType reflect.Type
@@ -54,6 +61,7 @@ type panicStack struct {
 }
 
 const traceFamily = "kellyframework.ServiceHandler"
+var formDecoder = schema.NewDecoder()
 
 func checkServiceMethodPrototype(methodType reflect.Type) error {
 	if methodType.Kind() != reflect.Func {
@@ -123,17 +131,18 @@ func RegisterFunctionsToServeMux(mux *http.ServeMux, methodCallLoggerContextKey 
 	return nil
 }
 
-func newArgumentExtractor(req *http.Request) (extractor argument_extrator.ArgumentExtractor) {
-	contentType := req.Header.Get("Content-Type")
-	if contentType == "application/json" {
-		extractor = argument_extrator.NewJSONArgumentExtractor(req)
-	} else {
-		// even the content type was not "application/x-www-form-urlencoded", the form request codec also can parse
-		// arguments encoded in query string.
-		extractor = argument_extrator.NewFormArgumentExtractor(req)
+func RegisterFunctionsToHTTPRouter(r *httprouter.Router, methodCallLoggerContextKey interface{},
+	triples []*MethodPathFunctionTriple) error {
+	for _, t := range triples {
+		handler, err := NewServiceHandler(t.Function, methodCallLoggerContextKey)
+		if err != nil {
+			return err
+		}
+
+		r.Handle(t.Method, t.Path, handler.ServeHTTPWithParams)
 	}
 
-	return
+	return nil
 }
 
 func setJSONResponseHeader(w http.ResponseWriter) {
@@ -172,36 +181,64 @@ func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []refle
 	return
 }
 
+func (h *ServiceHandler) parseArgument(r *http.Request, params httprouter.Params, arg interface{}) error {
+	err := r.ParseForm()
+	if err != nil {
+		return err
+	}
+
+	// params in url path is prior to query string.
+	if params != nil {
+		for _, param := range params {
+			r.Form.Set(param.Key, param.Value)
+		}
+	}
+
+	err = formDecoder.Decode(arg, r.Form)
+	if err != nil {
+		return err
+	}
+
+	// json content is prior to params in url path.
+	if r.Header.Get("Content-Type") == "application/json" {
+		err = json.NewDecoder(r.Body).Decode(arg)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = h.validator.Struct(arg)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Request) {
-	tracer := trace.New(traceFamily, req.URL.Path)
+	h.ServeHTTPWithParams(respWriter, req, nil)
+}
+
+func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Request, params httprouter.Params) {
+	tracer := trace.New(traceFamily, r.URL.Path)
 	defer tracer.Finish()
 
 	// extract arguments.
-	argExtractor := newArgumentExtractor(req)
 	arg := reflect.New(h.method.argType.Elem())
-
-	argError := argExtractor.ExtractTo(arg.Interface())
-	if argError != nil {
-		writeErrorResponse(respWriter, tracer, argError.Error(), 400, "parse argument failed")
+	err := h.parseArgument(r, params, arg.Interface())
+	if err != nil {
+		writeErrorResponse(rw, tracer, err.Error(), 400, "parse argument failed")
 		return
-	}
-
-	if arg.Elem().Kind() == reflect.Struct {
-		argError = h.validator.Struct(arg.Interface())
-		if argError != nil {
-			writeErrorResponse(respWriter, tracer, argError.Error(), 400, "argument invalid")
-			return
-		}
 	}
 
 	// do method call.
 	beginTime := time.Now()
 	out, methodPanic := doServiceMethodCall(h.method, []reflect.Value{
 		reflect.ValueOf(&ServiceMethodContext{
-			req.Context(),
-			req.RemoteAddr,
-			req.Body,
-			respWriter,
+			r.Context(),
+			r.RemoteAddr,
+			r.Body,
+			rw,
 		}),
 		arg,
 	})
@@ -223,20 +260,20 @@ func (h *ServiceHandler) ServeHTTP(respWriter http.ResponseWriter, req *http.Req
 	var respData interface{}
 	if methodPanic != nil {
 		respData = methodPanic
-		writeErrorResponse(respWriter, tracer, respData, 500, "service method panicked")
+		writeErrorResponse(rw, tracer, respData, 500, "service method panicked")
 	} else if methodError != nil {
 		respData = methodError.(error).Error()
-		writeErrorResponse(respWriter, tracer, respData, 500, "service method error")
+		writeErrorResponse(rw, tracer, respData, 500, "service method error")
 	} else if len(out) == 2 {
 		// write to response body as JSON encoded string while prototype has two return values, even when the response
 		// data is nil.
 		respData = methodReturn
-		writeJSONResponse(respWriter, tracer, respData)
+		writeJSONResponse(rw, tracer, respData)
 	}
 
 	// record some thing if logger existed.
 	if h.methodCallLoggerContextKey != nil {
-		logger := req.Context().Value(h.methodCallLoggerContextKey).(MethodCallLogger)
+		logger := r.Context().Value(h.methodCallLoggerContextKey).(MethodCallLogger)
 		if logger != nil {
 			marshaledArgs, err := json.Marshal(arg.Interface())
 			if err != nil {

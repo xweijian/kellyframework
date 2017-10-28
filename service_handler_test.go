@@ -164,6 +164,16 @@ func TestServiceHandlerServeHTTP(t *testing.T) {
 		}
 	})
 
+	validatorEnabledFunctionInvalidQueryString := httptest.NewRequest("POST", "/validatorEnabledFunction?fadfa", strings.NewReader("{\"A\": 1}"))
+	validatorEnabledFunctionInvalidQueryString.Header.Add("content-type", "application/json")
+	t.Run("validator enabled invalid arguments", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		h4.ServeHTTP(recorder, validatorEnabledFunctionInvalidQueryString)
+		if recorder.Code == 200 {
+			t.Error("code could not be 200, body:", recorder.Body)
+		}
+	})
+
 	validatorEnabledFunctionNormalArguments := httptest.NewRequest("POST", "/validatorEnabledFunction", strings.NewReader("{\"A\": 1}"))
 	validatorEnabledFunctionNormalArguments.Header.Add("content-type", "application/json")
 	t.Run("validator enabled normal arguments", func(t *testing.T) {

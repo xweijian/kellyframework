@@ -3,6 +3,10 @@ import:
 - package: github.com/Sirupsen/logrus
   version: ^1.0.3
 - package: github.com/gorilla/schema
-- package: golang.org/x/net/trace
+- package: golang.org/x/net
+  subpackages:
+  - trace
 - package: gopkg.in/go-playground/validator.v9
   version: ^9.7.0
+- package: github.com/julienschmidt/httprouter
+  version: master

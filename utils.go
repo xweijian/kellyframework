@@ -3,6 +3,7 @@ package kellyframework
 import (
 	"net/http"
 	"io"
+	"github.com/julienschmidt/httprouter"
 )
 
 type methodCallLogger struct {
@@ -27,5 +28,16 @@ func NewLoggingServiceMux(pairs []*PathFunctionPair, logWriter io.Writer) (http.
 	}
 
 	return NewAccessLogDecorator(serviceMux, logWriter, ServiceHandlerAccessLogRowFillerContextKey,
+		ServiceHandlerAccessLogRowFillerFactory), nil
+}
+
+func NewLoggingHTTPRouter(triples []*MethodPathFunctionTriple, logWriter io.Writer) (http.Handler, error) {
+	router := httprouter.New()
+	err := RegisterFunctionsToHTTPRouter(router, ServiceHandlerAccessLogRowFillerContextKey, triples)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewAccessLogDecorator(router, logWriter, ServiceHandlerAccessLogRowFillerContextKey,
 		ServiceHandlerAccessLogRowFillerFactory), nil
 }
