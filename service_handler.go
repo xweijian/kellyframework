@@ -14,6 +14,7 @@ import (
 	"runtime/debug"
 	"github.com/julienschmidt/httprouter"
 	"github.com/gorilla/schema"
+	"net/url"
 )
 
 type ServiceMethodContext struct {
@@ -182,16 +183,10 @@ func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []refle
 }
 
 func (h *ServiceHandler) parseArgument(r *http.Request, params httprouter.Params, arg interface{}) error {
+	// query string has lowest priority.
 	err := r.ParseForm()
 	if err != nil {
 		return err
-	}
-
-	// params in url path is prior to query string.
-	if params != nil {
-		for _, param := range params {
-			r.Form.Set(param.Key, param.Value)
-		}
 	}
 
 	err = formDecoder.Decode(arg, r.Form)
@@ -199,9 +194,22 @@ func (h *ServiceHandler) parseArgument(r *http.Request, params httprouter.Params
 		return err
 	}
 
-	// json content is prior to params in url path.
+	// json content is prior to query string.
 	if r.Header.Get("Content-Type") == "application/json" {
-		err = json.NewDecoder(r.Body).Decode(arg)
+		err := json.NewDecoder(r.Body).Decode(arg)
+		if err != nil {
+			return err
+		}
+	}
+
+	// params is prior to json content.
+	if params != nil {
+		paramValues := url.Values{}
+		for _, param := range params {
+			paramValues.Set(param.Key, param.Value)
+		}
+
+		err = formDecoder.Decode(arg, paramValues)
 		if err != nil {
 			return err
 		}
