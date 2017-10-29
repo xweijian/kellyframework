@@ -182,6 +182,15 @@ func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []refle
 	return
 }
 
+func getRequestRealAddress(r *http.Request) string {
+	addr := r.Header.Get("X-Forwarded-For")
+	if addr == "" {
+		addr = r.RemoteAddr
+	}
+
+	return addr
+}
+
 func (h *ServiceHandler) parseArgument(r *http.Request, params httprouter.Params, arg interface{}) error {
 	// query string has lowest priority.
 	err := r.ParseForm()
@@ -244,7 +253,7 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 	out, methodPanic := doServiceMethodCall(h.method, []reflect.Value{
 		reflect.ValueOf(&ServiceMethodContext{
 			r.Context(),
-			r.RemoteAddr,
+			getRequestRealAddress(r),
 			r.Body,
 			rw,
 		}),
