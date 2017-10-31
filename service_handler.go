@@ -19,6 +19,7 @@ import (
 
 type ServiceMethodContext struct {
 	Context            context.Context
+	XForwardedFor      string
 	RemoteAddr         string
 	RequestBodyReader  io.ReadCloser
 	ResponseBodyWriter io.Writer
@@ -62,6 +63,7 @@ type panicStack struct {
 }
 
 const traceFamily = "kellyframework.ServiceHandler"
+
 var formDecoder = schema.NewDecoder()
 
 func checkServiceMethodPrototype(methodType reflect.Type) error {
@@ -182,15 +184,6 @@ func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []refle
 	return
 }
 
-func getRequestRealAddress(r *http.Request) string {
-	addr := r.Header.Get("X-Forwarded-For")
-	if addr == "" {
-		addr = r.RemoteAddr
-	}
-
-	return addr
-}
-
 func (h *ServiceHandler) parseArgument(r *http.Request, params httprouter.Params, arg interface{}) error {
 	// query string has lowest priority.
 	err := r.ParseForm()
@@ -253,7 +246,8 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 	out, methodPanic := doServiceMethodCall(h.method, []reflect.Value{
 		reflect.ValueOf(&ServiceMethodContext{
 			r.Context(),
-			getRequestRealAddress(r),
+			r.Header.Get("X-Forwarded-For"),
+			r.RemoteAddr,
 			r.Body,
 			rw,
 		}),
