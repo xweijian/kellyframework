@@ -20,20 +20,38 @@ func ServiceHandlerAccessLogRowFillerFactory(row *AccessLogRow) AccessLogRowFill
 	return &methodCallLogger{row}
 }
 
-func NewLoggingServiceMux(pairs []*PathFunctionPair, logWriter io.Writer) (http.Handler, error) {
-	serviceMux := http.NewServeMux()
-	err := RegisterFunctionsToServeMux(serviceMux, ServiceHandlerAccessLogRowFillerContextKey, pairs)
+type MethodPathFunctionTriple struct {
+	Method   string
+	Path     string
+	Function interface{}
+}
+
+func RegisterFunctionsToHTTPRouter(r *httprouter.Router, methodCallLoggerContextKey interface{},
+	triples []*MethodPathFunctionTriple) error {
+	for _, t := range triples {
+		handler, err := NewServiceHandler(t.Function, methodCallLoggerContextKey)
+		if err != nil {
+			return err
+		}
+
+		r.Handle(t.Method, t.Path, handler.ServeHTTPWithParams)
+	}
+
+	return nil
+}
+
+func NewHTTPRouter(triples []*MethodPathFunctionTriple) (*httprouter.Router, error) {
+	router := httprouter.New()
+	err := RegisterFunctionsToHTTPRouter(router, ServiceHandlerAccessLogRowFillerContextKey, triples)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewAccessLogDecorator(serviceMux, logWriter, ServiceHandlerAccessLogRowFillerContextKey,
-		ServiceHandlerAccessLogRowFillerFactory), nil
+	return router, nil
 }
 
 func NewLoggingHTTPRouter(triples []*MethodPathFunctionTriple, logWriter io.Writer) (http.Handler, error) {
-	router := httprouter.New()
-	err := RegisterFunctionsToHTTPRouter(router, ServiceHandlerAccessLogRowFillerContextKey, triples)
+	router, err := NewHTTPRouter(triples)
 	if err != nil {
 		return nil, err
 	}

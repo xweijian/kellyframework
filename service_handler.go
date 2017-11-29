@@ -35,17 +35,6 @@ type ServiceHandler struct {
 	validator                  *validator.Validate
 }
 
-type PathFunctionPair struct {
-	Path     string
-	Function interface{}
-}
-
-type MethodPathFunctionTriple struct {
-	Method   string
-	Path     string
-	Function interface{}
-}
-
 type serviceMethod struct {
 	value   reflect.Value
 	argType reflect.Type
@@ -118,34 +107,6 @@ func NewServiceHandler(method interface{}, methodCallLoggerContextKey interface{
 	}
 
 	return
-}
-
-func RegisterFunctionsToServeMux(mux *http.ServeMux, methodCallLoggerContextKey interface{},
-	pairs []*PathFunctionPair) error {
-	for _, pair := range pairs {
-		handler, err := NewServiceHandler(pair.Function, methodCallLoggerContextKey)
-		if err != nil {
-			return err
-		}
-
-		mux.Handle(pair.Path, handler)
-	}
-
-	return nil
-}
-
-func RegisterFunctionsToHTTPRouter(r *httprouter.Router, methodCallLoggerContextKey interface{},
-	triples []*MethodPathFunctionTriple) error {
-	for _, t := range triples {
-		handler, err := NewServiceHandler(t.Function, methodCallLoggerContextKey)
-		if err != nil {
-			return err
-		}
-
-		r.Handle(t.Method, t.Path, handler.ServeHTTPWithParams)
-	}
-
-	return nil
 }
 
 func setJSONResponseHeader(w http.ResponseWriter) {
