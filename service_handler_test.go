@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"reflect"
+	"github.com/julienschmidt/httprouter"
 )
 
 type empty struct {
@@ -19,6 +20,10 @@ var e = empty{}
 
 func (e *empty) errorMethod(*ServiceMethodContext, *empty) (*struct{}, error) {
 	return nil, fmt.Errorf("expected error")
+}
+
+func (e *empty) errorResponseMethod(*ServiceMethodContext, *empty) (*struct{}, error) {
+	return nil, &ErrorResponse{403, "forbidden", nil}
 }
 
 func (e *empty) panicMethod(*ServiceMethodContext, *empty) (*struct{}, error) {
@@ -101,28 +106,9 @@ func TestServiceHandlerCheckServiceMethodPrototype(t *testing.T) {
 func TestServiceHandlerServeHTTP(t *testing.T) {
 	h1, _ := NewServiceHandler(emptyFunction, nil)
 	h2, _ := NewServiceHandler(e.errorMethod, nil)
-	h3, _ := NewServiceHandler(e.panicMethod, nil)
-	h4, _ := NewServiceHandler(validatorEnabledFunction, nil)
-
-	emptyFunctionWrongArguments := httptest.NewRequest("POST", "/emptyFunction", strings.NewReader("{312}"))
-	emptyFunctionWrongArguments.Header.Add("content-type", "application/json")
-	t.Run("wrong arguments", func(t *testing.T) {
-		recorder := httptest.NewRecorder()
-		h1.ServeHTTP(recorder, emptyFunctionWrongArguments)
-		if recorder.Code == 200 {
-			t.Error("code could not be 200, body:", recorder.Body)
-		}
-	})
-
-	emptyFunctionEmptyArguments := httptest.NewRequest("POST", "/emptyFunction", strings.NewReader(""))
-	emptyFunctionEmptyArguments.Header.Add("content-type", "application/json")
-	t.Run("empty arguments", func(t *testing.T) {
-		recorder := httptest.NewRecorder()
-		h1.ServeHTTP(recorder, emptyFunctionEmptyArguments)
-		if recorder.Code == 200 {
-			t.Error("code could not be 200, body:", recorder.Body)
-		}
-	})
+	h3, _ := NewServiceHandler(e.errorResponseMethod, nil)
+	h4, _ := NewServiceHandler(e.panicMethod, nil)
+	h5, _ := NewServiceHandler(validatorEnabledFunction, nil)
 
 	emptyFunctionNormalArguments := httptest.NewRequest("POST", "/emptyFunction", strings.NewReader("{}"))
 	emptyFunctionNormalArguments.Header.Add("content-type", "application/json")
@@ -134,13 +120,43 @@ func TestServiceHandlerServeHTTP(t *testing.T) {
 		}
 	})
 
+	emptyFunctionWrongArguments := httptest.NewRequest("POST", "/emptyFunction", strings.NewReader("{312}"))
+	emptyFunctionWrongArguments.Header.Add("content-type", "application/json")
+	t.Run("wrong arguments", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		h1.ServeHTTP(recorder, emptyFunctionWrongArguments)
+		if recorder.Code != 400 {
+			t.Error("code is not 400, body:", recorder.Body)
+		}
+	})
+
+	emptyFunctionEmptyArguments := httptest.NewRequest("POST", "/emptyFunction", strings.NewReader(""))
+	emptyFunctionEmptyArguments.Header.Add("content-type", "application/json")
+	t.Run("empty arguments", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		h1.ServeHTTP(recorder, emptyFunctionEmptyArguments)
+		if recorder.Code != 400 {
+			t.Error("code is not 400, body:", recorder.Body)
+		}
+	})
+
 	errorMethodNormalArguments := httptest.NewRequest("POST", "/errorMethod", strings.NewReader("{}"))
 	errorMethodNormalArguments.Header.Add("content-type", "application/json")
 	t.Run("error", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		h2.ServeHTTP(recorder, errorMethodNormalArguments)
-		if recorder.Code == 200 {
-			t.Error("code could not be 200, body:", recorder.Body)
+		if recorder.Code != 500 {
+			t.Error("code is not 500, body:", recorder.Body)
+		}
+	})
+
+	errorResponseMethodNormalArguments := httptest.NewRequest("POST", "/errorMethod", strings.NewReader("{}"))
+	errorResponseMethodNormalArguments.Header.Add("content-type", "application/json")
+	t.Run("error", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		h3.ServeHTTP(recorder, errorResponseMethodNormalArguments)
+		if recorder.Code != 403 {
+			t.Error("code is not 403, body:", recorder.Body)
 		}
 	})
 
@@ -148,29 +164,9 @@ func TestServiceHandlerServeHTTP(t *testing.T) {
 	panicMethodNormalArguments.Header.Add("content-type", "application/json")
 	t.Run("panic", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
-		h3.ServeHTTP(recorder, panicMethodNormalArguments)
-		if recorder.Code == 200 {
-			t.Error("code could not be 200, body:", recorder.Body)
-		}
-	})
-
-	validatorEnabledFunctionInvalidArguments := httptest.NewRequest("POST", "/validatorEnabledFunction", strings.NewReader("{}"))
-	validatorEnabledFunctionInvalidArguments.Header.Add("content-type", "application/json")
-	t.Run("validator enabled invalid arguments", func(t *testing.T) {
-		recorder := httptest.NewRecorder()
-		h4.ServeHTTP(recorder, validatorEnabledFunctionInvalidArguments)
-		if recorder.Code == 200 {
-			t.Error("code could not be 200, body:", recorder.Body)
-		}
-	})
-
-	validatorEnabledFunctionInvalidQueryString := httptest.NewRequest("POST", "/validatorEnabledFunction?fadfa", strings.NewReader("{\"A\": 1}"))
-	validatorEnabledFunctionInvalidQueryString.Header.Add("content-type", "application/json")
-	t.Run("validator enabled invalid arguments", func(t *testing.T) {
-		recorder := httptest.NewRecorder()
-		h4.ServeHTTP(recorder, validatorEnabledFunctionInvalidQueryString)
-		if recorder.Code == 200 {
-			t.Error("code could not be 200, body:", recorder.Body)
+		h4.ServeHTTP(recorder, panicMethodNormalArguments)
+		if recorder.Code != 500 {
+			t.Error("code is not 500, body:", recorder.Body)
 		}
 	})
 
@@ -178,9 +174,38 @@ func TestServiceHandlerServeHTTP(t *testing.T) {
 	validatorEnabledFunctionNormalArguments.Header.Add("content-type", "application/json")
 	t.Run("validator enabled normal arguments", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
-		h4.ServeHTTP(recorder, validatorEnabledFunctionNormalArguments)
+		h5.ServeHTTPWithParams(recorder, validatorEnabledFunctionNormalArguments, httprouter.Params{httprouter.Param{"A", "2"}})
 		if recorder.Code != 200 {
 			t.Error("code is not 200, body:", recorder.Body)
+		}
+	})
+
+	validatorEnabledFunctionNormalQueryString := httptest.NewRequest("POST", "/validatorEnabledFunction?a=1", strings.NewReader("{}"))
+	validatorEnabledFunctionNormalQueryString.Header.Add("content-type", "application/json")
+	t.Run("validator enabled invalid arguments", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		h5.ServeHTTP(recorder, validatorEnabledFunctionNormalQueryString)
+		if recorder.Code != 200 {
+			t.Error("code is not 200, body:", recorder.Body)
+		}
+	})
+
+	validatorEnabledFunctionInvalidArguments := httptest.NewRequest("POST", "/validatorEnabledFunction", strings.NewReader("{}"))
+	validatorEnabledFunctionInvalidArguments.Header.Add("content-type", "application/json")
+	t.Run("validator enabled invalid arguments", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		h5.ServeHTTP(recorder, validatorEnabledFunctionInvalidArguments)
+		if recorder.Code != 400 {
+			t.Error("code is not 400, body:", recorder.Body)
+		}
+	})
+
+	validatorEnabledFunctionInvalidQueryString := httptest.NewRequest("POST", "/validatorEnabledFunction?b=1", strings.NewReader("{}"))
+	t.Run("validator enabled invalid arguments", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		h5.ServeHTTP(recorder, validatorEnabledFunctionInvalidQueryString)
+		if recorder.Code != 400 {
+			t.Error("code is not 400, body:", recorder.Body)
 		}
 	})
 }

@@ -35,15 +35,15 @@ type ServiceHandler struct {
 	validator                  *validator.Validate
 }
 
+type ErrorResponse struct {
+	Code int         `json:"code"`
+	Msg  string      `json:"msg"`
+	Data interface{} `json:"data"`
+}
+
 type serviceMethod struct {
 	value   reflect.Value
 	argType reflect.Type
-}
-
-type errorResponseBody struct {
-	Code    int         `json:"code"`
-	Summary string      `json:"summary"`
-	Data    interface{} `json:"data"`
 }
 
 type panicStack struct {
@@ -54,6 +54,10 @@ type panicStack struct {
 const traceFamily = "kellyframework.ServiceHandler"
 
 var formDecoder = schema.NewDecoder()
+
+func (resp *ErrorResponse) Error() string {
+	return resp.Msg
+}
 
 func checkServiceMethodPrototype(methodType reflect.Type) error {
 	if methodType.Kind() != reflect.Func {
@@ -118,17 +122,15 @@ func setJSONResponseHeader(w http.ResponseWriter) {
 func writeJSONResponse(w http.ResponseWriter, tr trace.Trace, data interface{}) {
 	tr.LazyPrintf("%+v", data)
 	setJSONResponseHeader(w)
-	enc := json.NewEncoder(w)
-	enc.Encode(data)
+	json.NewEncoder(w).Encode(data)
 }
 
-func writeErrorResponse(w http.ResponseWriter, tr trace.Trace, data interface{}, code int, summary string) {
-	tr.LazyPrintf("%s: %+v", summary, data)
+func writeErrorResponse(w http.ResponseWriter, tr trace.Trace, resp *ErrorResponse) {
+	tr.LazyPrintf("%s: %+v", resp.Msg, resp.Data)
 	tr.SetError()
 	setJSONResponseHeader(w)
-	w.WriteHeader(code)
-	enc := json.NewEncoder(w)
-	enc.Encode(&errorResponseBody{code, summary, data})
+	w.WriteHeader(resp.Code)
+	json.NewEncoder(w).Encode(resp)
 }
 
 func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []reflect.Value, ps *panicStack) {
@@ -198,7 +200,7 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 	arg := reflect.New(h.method.argType.Elem())
 	err := h.parseArgument(r, params, arg.Interface())
 	if err != nil {
-		writeErrorResponse(rw, tracer, err.Error(), 400, "parse argument failed")
+		writeErrorResponse(rw, tracer, &ErrorResponse{400, "parse argument failed", err.Error()})
 		return
 	}
 
@@ -231,11 +233,20 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 
 	var respData interface{}
 	if methodPanic != nil {
-		respData = methodPanic
-		writeErrorResponse(rw, tracer, respData, 500, "service method panicked")
+		respData = &ErrorResponse{500, "service method panicked", methodPanic}
+		writeErrorResponse(rw, tracer, respData.(*ErrorResponse))
 	} else if methodError != nil {
-		respData = methodError.(error).Error()
-		writeErrorResponse(rw, tracer, respData, 500, "service method error")
+		ok := false
+		if respData, ok = methodError.(*ErrorResponse); !ok {
+			if err, ok = methodError.(error); !ok {
+				// unlikely
+				panic(fmt.Sprintf("the returned error is not error type"))
+			}
+
+			respData = &ErrorResponse{500, "service method error", err.Error()}
+		}
+
+		writeErrorResponse(rw, tracer, respData.(*ErrorResponse))
 	} else if len(out) == 2 {
 		// write to response body as JSON encoded string while prototype has two return values, even when the response
 		// data is nil.
