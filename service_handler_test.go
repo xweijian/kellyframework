@@ -170,7 +170,7 @@ func TestServiceHandlerServeHTTP(t *testing.T) {
 		}
 	})
 
-	validatorEnabledFunctionNormalArguments := httptest.NewRequest("POST", "/validatorEnabledFunction", strings.NewReader("{\"A\": 1}"))
+	validatorEnabledFunctionNormalArguments := httptest.NewRequest("POST", "/validatorEnabledFunction", strings.NewReader("{\"A\": 1, \"B\":2}"))
 	validatorEnabledFunctionNormalArguments.Header.Add("content-type", "application/json")
 	t.Run("validator enabled normal arguments", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
@@ -180,7 +180,7 @@ func TestServiceHandlerServeHTTP(t *testing.T) {
 		}
 	})
 
-	validatorEnabledFunctionNormalQueryString := httptest.NewRequest("POST", "/validatorEnabledFunction?a=1", strings.NewReader("{}"))
+	validatorEnabledFunctionNormalQueryString := httptest.NewRequest("POST", "/validatorEnabledFunction?a=1&b=2", strings.NewReader("{}"))
 	validatorEnabledFunctionNormalQueryString.Header.Add("content-type", "application/json")
 	t.Run("validator enabled invalid arguments", func(t *testing.T) {
 		recorder := httptest.NewRecorder()

@@ -55,6 +55,10 @@ const traceFamily = "kellyframework.ServiceHandler"
 
 var formDecoder = schema.NewDecoder()
 
+func init() {
+	formDecoder.IgnoreUnknownKeys(true)
+}
+
 func (resp *ErrorResponse) Error() string {
 	return resp.Msg
 }
