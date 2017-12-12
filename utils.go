@@ -20,29 +20,29 @@ func ServiceHandlerAccessLogRowFillerFactory(row *AccessLogRow) AccessLogRowFill
 	return &methodCallLogger{row}
 }
 
-type MethodPathFunctionTriple struct {
-	Method   string
-	Path     string
-	Function interface{}
+type Route struct {
+	Method            string
+	Path              string
+	Function          interface{}
+	BypassRequestBody bool
 }
 
-func RegisterFunctionsToHTTPRouter(r *httprouter.Router, methodCallLoggerContextKey interface{},
-	triples []*MethodPathFunctionTriple) error {
-	for _, t := range triples {
-		handler, err := NewServiceHandler(t.Function, methodCallLoggerContextKey)
+func RegisterFunctionsToHTTPRouter(r *httprouter.Router, loggerContextKey interface{}, routes []*Route) error {
+	for _, rt := range routes {
+		handler, err := NewServiceHandler(rt.Function, loggerContextKey, rt.BypassRequestBody)
 		if err != nil {
 			return err
 		}
 
-		r.Handle(t.Method, t.Path, handler.ServeHTTPWithParams)
+		r.Handle(rt.Method, rt.Path, handler.ServeHTTPWithParams)
 	}
 
 	return nil
 }
 
-func NewHTTPRouter(triples []*MethodPathFunctionTriple) (*httprouter.Router, error) {
+func NewHTTPRouter(routes []*Route) (*httprouter.Router, error) {
 	router := httprouter.New()
-	err := RegisterFunctionsToHTTPRouter(router, ServiceHandlerAccessLogRowFillerContextKey, triples)
+	err := RegisterFunctionsToHTTPRouter(router, ServiceHandlerAccessLogRowFillerContextKey, routes)
 	if err != nil {
 		return nil, err
 	}
@@ -50,8 +50,8 @@ func NewHTTPRouter(triples []*MethodPathFunctionTriple) (*httprouter.Router, err
 	return router, nil
 }
 
-func NewLoggingHTTPRouter(triples []*MethodPathFunctionTriple, logWriter io.Writer) (http.Handler, error) {
-	router, err := NewHTTPRouter(triples)
+func NewLoggingHTTPRouter(routes []*Route, logWriter io.Writer) (http.Handler, error) {
+	router, err := NewHTTPRouter(routes)
 	if err != nil {
 		return nil, err
 	}

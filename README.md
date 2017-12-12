@@ -50,19 +50,18 @@ func main() {
         panic(err)
     }
 
-    triples := []*kellyframework.MethodPathFunctionTriple{
-        {"POST", "/user/:Name", addUser},
-        {"POST", "/user/", addUser},
-        {"GET", "/user/:Name", getUser},
-        {"DELETE", "/user/:Name", deleteUser},
+    routes := []*kellyframework.Route{
+        {Method: "POST", Path: "/user/:Name", Function: addUser},
+        {Method: "POST", Path: "/user/", Function: addUser},
+        {Method: "GET", Path: "/user/:Name", Function: getUser, BypassRequestBody: true},
+        {Method: "DELETE", Path: "/user/:Name", Function: deleteUser, BypassRequestBody: true},
     }
-    loggingServiceRouter, err := kellyframework.NewLoggingHTTPRouter(triples, accessLogFile)
+    loggingServiceRouter, err := kellyframework.NewLoggingHTTPRouter(routes, accessLogFile)
     if err != nil {
         panic(err)
     }
 
     http.Handle("/", loggingServiceRouter)
-    http.HandleFunc("/hc/status.html", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
     http.ListenAndServe(":8080", nil)
 }
 ```
@@ -97,9 +96,9 @@ curl -X "DELETE" http://127.0.0.1:8080/user/test
 不为空, 则按以下格式输出:
 ```json
 {
-  "Code": 500,
-  "Msg": "service method error", 
-  "Data": "error messages"
+  "code": 500,
+  "msg": "service method error", 
+  "data": "error messages"
 }
 ```
 
@@ -148,11 +147,16 @@ type ServiceMethodContext struct {
 ```
 这些字段都可以随便使用.
 
-但需要注意的是, 如果你想自己处理request body, 那么你的client就不应当添加"content-type: application/json"的头, 否则框架就会尝试去读取
-request body并按json格式去decode.
+但需要注意的是, 如果你想自己处理request body, 那么你就应当把`Route.BypassRequestBody`设为true, 这样框架就会忽略request body, 留给你自
+己的函数来解析.
 
 而如果你想自己返回response body, 那么你的函数就应当只有一个error的返回值, 这样框架就不会尝试按json格式去encode你返回的结构体并在response 
 body里返给client.
+
+### 我想返回自定义的错误码怎么办?
+
+你可以在你的函数中, 返回error的时候, 返回一个`kellyframework.ErrorResponse`结构体(它继承了error), 在其中你可以填写你想要的code, msg和
+data字段内容.
 
 ### access log是否支持自动切分?
 

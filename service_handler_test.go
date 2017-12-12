@@ -104,11 +104,11 @@ func TestServiceHandlerCheckServiceMethodPrototype(t *testing.T) {
 }
 
 func TestServiceHandlerServeHTTP(t *testing.T) {
-	h1, _ := NewServiceHandler(emptyFunction, nil)
-	h2, _ := NewServiceHandler(e.errorMethod, nil)
-	h3, _ := NewServiceHandler(e.errorResponseMethod, nil)
-	h4, _ := NewServiceHandler(e.panicMethod, nil)
-	h5, _ := NewServiceHandler(validatorEnabledFunction, nil)
+	h1, _ := NewServiceHandler(emptyFunction, nil, false)
+	h2, _ := NewServiceHandler(e.errorMethod, nil, false)
+	h3, _ := NewServiceHandler(e.errorResponseMethod, nil, false)
+	h4, _ := NewServiceHandler(e.panicMethod, nil, false)
+	h5, _ := NewServiceHandler(validatorEnabledFunction, nil, false)
 
 	emptyFunctionNormalArguments := httptest.NewRequest("POST", "/emptyFunction", strings.NewReader("{}"))
 	emptyFunctionNormalArguments.Header.Add("content-type", "application/json")

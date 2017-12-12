@@ -30,9 +30,10 @@ type MethodCallLogger interface {
 }
 
 type ServiceHandler struct {
-	methodCallLoggerContextKey interface{}
-	method                     *serviceMethod
-	validator                  *validator.Validate
+	loggerContextKey  interface{}
+	method            *serviceMethod
+	validator         *validator.Validate
+	bypassRequestBody bool
 }
 
 type ErrorResponse struct {
@@ -95,7 +96,7 @@ func checkServiceMethodPrototype(methodType reflect.Type) error {
 	return nil
 }
 
-func NewServiceHandler(method interface{}, methodCallLoggerContextKey interface{}) (h *ServiceHandler, err error) {
+func NewServiceHandler(method interface{}, loggerContextKey interface{}, bypassRequestBody bool) (h *ServiceHandler, err error) {
 	// two method prototypes are accept:
 	// 1. 'func(*ServiceMethodContext, *struct) (anything, error)' which for normal use.
 	// 2. 'func(*ServiceMethodContext, *struct) (error)' which for custom response data such as a data stream.
@@ -106,12 +107,13 @@ func NewServiceHandler(method interface{}, methodCallLoggerContextKey interface{
 	}
 
 	h = &ServiceHandler{
-		methodCallLoggerContextKey,
+		loggerContextKey,
 		&serviceMethod{
 			reflect.ValueOf(method),
 			methodType.In(1),
 		},
 		validator.New(),
+		bypassRequestBody,
 	}
 
 	return
@@ -164,7 +166,7 @@ func (h *ServiceHandler) parseArgument(r *http.Request, params httprouter.Params
 	}
 
 	// json content is prior to query string.
-	if r.Header.Get("Content-Type") == "application/json" {
+	if !h.bypassRequestBody && r.Header.Get("Content-Type") == "application/json" {
 		err := json.NewDecoder(r.Body).Decode(arg)
 		if err != nil {
 			return err
@@ -259,8 +261,8 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 	}
 
 	// record some thing if logger existed.
-	if h.methodCallLoggerContextKey != nil {
-		logger := r.Context().Value(h.methodCallLoggerContextKey).(MethodCallLogger)
+	if h.loggerContextKey != nil {
+		logger := r.Context().Value(h.loggerContextKey).(MethodCallLogger)
 		if logger != nil {
 			marshaledArgs, err := json.Marshal(arg.Interface())
 			if err != nil {
