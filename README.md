@@ -34,9 +34,9 @@ func addUser(ctx *kellyframework.ServiceMethodContext, user *user) error {
     return nil
 }
 
-func getUser(ctx *kellyframework.ServiceMethodContext, name *userName) (*userInfo, error) {
+func getUser(ctx *kellyframework.ServiceMethodContext, name *userName) interface{} {
     // return userInfo or return error
-    return &userInfo{}, nil
+    return &userInfo{}
 }
 
 func deleteUser(ctx *kellyframework.ServiceMethodContext, name *userName) error {
@@ -88,26 +88,24 @@ curl -X "DELETE" http://127.0.0.1:8080/user/test
 
 ### kellyframework对函数原型是否有要求?
 
-是的, 只支持两种函数原型:
+是的, 只支持一种函数原型:
 
-`func(*ServiceMethodContext, *struct) (anything, error)`
+`func(*ServiceMethodContext, *struct) anything`
 
-这种情况下, 框架会把url pattern/json/query string解析成struct, 并把第一个返回值给json encode之后放在response body里输出. 如果error
-不为空, 则按以下格式输出:
+框架会把url pattern/json/query string解析成struct, 并把第一个返回值给json encode之后放在response body里输出.
+
+如果返回的是error类型,则按以下格式输出:
 ```json
 {
   "code": 500,
   "msg": "service method error", 
-  "data": "error messages"
+  "data": "returned error string"
 }
 ```
 
-`func(*ServiceMethodContext, *struct) (error)`
+### 我想返回自定义的错误码怎么办?
 
-这种情况下, 框架会把url pattern/json/query string解析成struct, 然后用户需要自己定制化返回response body. 如果error不为空, 也会按上一种
-那样输出response body.
-
-**以上两种函数原型基本上囊括了绝大部分http json api的场景.**
+你可以在你的函数中, 返回一个`*kellyframework.ErrorResponse`结构体, 在其中你可以填写你想要的code, msg和data字段内容.
 
 ### 我的函数并不关心输入的参数怎么办?
 
@@ -150,13 +148,7 @@ type ServiceMethodContext struct {
 但需要注意的是, 如果你想自己处理request body, 那么你就应当把`Route.BypassRequestBody`设为true, 这样框架就会忽略request body, 留给你自
 己的函数来解析.
 
-而如果你想自己返回response body, 那么你的函数就应当只有一个error的返回值, 这样框架就不会尝试按json格式去encode你返回的结构体并在response 
-body里返给client.
-
-### 我想返回自定义的错误码怎么办?
-
-你可以在你的函数中, 返回error的时候, 返回一个`kellyframework.ErrorResponse`结构体(它继承了error), 在其中你可以填写你想要的code, msg和
-data字段内容.
+而如果你想自己返回response body, 那么你就应当把`Route.BypassResponseBody`设为true, 这样框架就不会尝试按json格式去encode你返回的结构体.
 
 ### access log是否支持自动切分?
 

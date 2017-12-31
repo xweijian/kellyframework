@@ -30,10 +30,11 @@ type MethodCallLogger interface {
 }
 
 type ServiceHandler struct {
-	loggerContextKey  interface{}
-	method            *serviceMethod
-	validator         *validator.Validate
-	bypassRequestBody bool
+	loggerContextKey   interface{}
+	method             *serviceMethod
+	validator          *validator.Validate
+	bypassRequestBody  bool
+	bypassResponseBody bool
 }
 
 type ErrorResponse struct {
@@ -60,46 +61,33 @@ func init() {
 	formDecoder.IgnoreUnknownKeys(true)
 }
 
-func (resp *ErrorResponse) Error() string {
-	return resp.Msg
-}
-
 func checkServiceMethodPrototype(methodType reflect.Type) error {
 	if methodType.Kind() != reflect.Func {
 		return fmt.Errorf("you should provide a function or object method")
 	}
 
-	if methodType.NumIn() == 2 {
-		if methodType.In(0).Kind() != reflect.Ptr || methodType.In(0).Elem().Name() != "ServiceMethodContext" {
-			return fmt.Errorf("the first argument should be type *ServiceMethodContext")
-		}
-
-		if methodType.In(1).Kind() != reflect.Ptr || methodType.In(1).Elem().Kind() != reflect.Struct {
-			return fmt.Errorf("the second argument should be a struct pointer")
-		}
-	} else {
+	if methodType.NumIn() != 2 {
 		return fmt.Errorf("the service method should have two arguments")
 	}
 
-	if methodType.NumOut() == 2 {
-		if methodType.Out(1).Kind() != reflect.Interface || methodType.Out(1).Name() != "error" {
-			return fmt.Errorf("the second return value should be error interface")
-		}
-	} else if methodType.NumOut() == 1 {
-		if methodType.Out(0).Kind() != reflect.Interface || methodType.Out(0).Name() != "error" {
-			return fmt.Errorf("the return value should be error interface")
-		}
-	} else {
-		return fmt.Errorf("the service method should have one or two return values")
+	if methodType.In(0).Kind() != reflect.Ptr || methodType.In(0).Elem().Name() != "ServiceMethodContext" {
+		return fmt.Errorf("the first argument should be type *ServiceMethodContext")
+	}
+
+	if methodType.In(1).Kind() != reflect.Ptr || methodType.In(1).Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("the second argument should be a struct pointer")
+	}
+
+	if methodType.NumOut() != 1 {
+		return fmt.Errorf("the service method should have only one return value")
 	}
 
 	return nil
 }
 
-func NewServiceHandler(method interface{}, loggerContextKey interface{}, bypassRequestBody bool) (h *ServiceHandler, err error) {
-	// two method prototypes are accept:
-	// 1. 'func(*ServiceMethodContext, *struct) (anything, error)' which for normal use.
-	// 2. 'func(*ServiceMethodContext, *struct) (error)' which for custom response data such as a data stream.
+func NewServiceHandler(method interface{}, loggerContextKey interface{}, bypassRequestBody bool,
+	bypassResponseBody bool) (h *ServiceHandler, err error) {
+	// the method prototype like this: 'func(*ServiceMethodContext, *struct) (anything)'
 	methodType := reflect.TypeOf(method)
 	err = checkServiceMethodPrototype(methodType)
 	if err != nil {
@@ -114,6 +102,7 @@ func NewServiceHandler(method interface{}, loggerContextKey interface{}, bypassR
 		},
 		validator.New(),
 		bypassRequestBody,
+		bypassResponseBody,
 	}
 
 	return
@@ -224,16 +213,9 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 	})
 	duration := time.Now().Sub(beginTime)
 
-	// write return values or errors to response.
-	var methodReturn interface{}
-	var methodError interface{}
-	if len(out) == 2 {
-		methodReturn = out[0].Interface()
-		methodError = out[1].Interface()
-	} else if len(out) == 1 {
-		methodError = out[0].Interface()
-	} else if methodPanic == nil {
-		// the method prototype is neither 1 return value nor 2 return values, it is unlikely
+	// write returned value or error to response.
+	if methodPanic == nil && len(out) != 1 {
+		// the method prototype have more than one return value, it is forbidden.
 		panic(fmt.Sprintf("return values error: %+v", out))
 	}
 
@@ -241,23 +223,21 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 	if methodPanic != nil {
 		respData = &ErrorResponse{500, "service method panicked", methodPanic}
 		writeErrorResponse(rw, tracer, respData.(*ErrorResponse))
-	} else if methodError != nil {
+	} else {
+		methodReturn := out[0].Interface()
 		ok := false
-		if respData, ok = methodError.(*ErrorResponse); !ok {
-			if err, ok = methodError.(error); !ok {
-				// unlikely
-				panic(fmt.Sprintf("the returned error is not error type"))
+		if respData, ok = methodReturn.(*ErrorResponse); ok {
+			if respData.(*ErrorResponse) != nil {
+				writeErrorResponse(rw, tracer, respData.(*ErrorResponse))
 			}
-
+		} else if err, ok = methodReturn.(error); ok {
 			respData = &ErrorResponse{500, "service method error", err.Error()}
+			writeErrorResponse(rw, tracer, respData.(*ErrorResponse))
+		} else if !h.bypassResponseBody {
+			// write to response body as JSON encoded string
+			respData = methodReturn
+			writeJSONResponse(rw, tracer, respData)
 		}
-
-		writeErrorResponse(rw, tracer, respData.(*ErrorResponse))
-	} else if len(out) == 2 {
-		// write to response body as JSON encoded string while prototype has two return values, even when the response
-		// data is nil.
-		respData = methodReturn
-		writeJSONResponse(rw, tracer, respData)
 	}
 
 	// record some thing if logger existed.

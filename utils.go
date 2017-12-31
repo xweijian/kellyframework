@@ -21,15 +21,16 @@ func ServiceHandlerAccessLogRowFillerFactory(row *AccessLogRow) AccessLogRowFill
 }
 
 type Route struct {
-	Method            string
-	Path              string
-	Function          interface{}
-	BypassRequestBody bool
+	Method             string
+	Path               string
+	Function           interface{}
+	BypassRequestBody  bool
+	BypassResponseBody bool
 }
 
 func RegisterFunctionsToHTTPRouter(r *httprouter.Router, loggerContextKey interface{}, routes []*Route) error {
 	for _, rt := range routes {
-		handler, err := NewServiceHandler(rt.Function, loggerContextKey, rt.BypassRequestBody)
+		handler, err := NewServiceHandler(rt.Function, loggerContextKey, rt.BypassRequestBody, rt.BypassResponseBody)
 		if err != nil {
 			return err
 		}

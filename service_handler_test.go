@@ -18,26 +18,24 @@ type validatorEnabled struct {
 
 var e = empty{}
 
-func (e *empty) errorMethod(*ServiceMethodContext, *empty) (*struct{}, error) {
-	return nil, fmt.Errorf("expected error")
+func (e *empty) errorMethod(*ServiceMethodContext, *empty) error {
+	return fmt.Errorf("expected error")
 }
 
-func (e *empty) errorResponseMethod(*ServiceMethodContext, *empty) (*struct{}, error) {
-	return nil, &ErrorResponse{403, "forbidden", nil}
+func (e *empty) errorResponseMethod(*ServiceMethodContext, *empty) *ErrorResponse {
+	return &ErrorResponse{403, "forbidden", nil}
 }
 
-func (e *empty) panicMethod(*ServiceMethodContext, *empty) (*struct{}, error) {
+func (e *empty) panicMethod(*ServiceMethodContext, *empty) interface{} {
 	panic("expected panic")
-	return nil, nil
+	return nil
 }
 
-func emptyFunction(*ServiceMethodContext, *empty) (*struct{ A int }, error) {
-	return &struct {
-		A int
-	}{1}, nil
+func emptyFunction(*ServiceMethodContext, *empty) *struct{ A int } {
+	return &struct{ A int }{1}
 }
 
-func validatorEnabledFunction(*ServiceMethodContext, *validatorEnabled) (error) {
+func validatorEnabledFunction(*ServiceMethodContext, *validatorEnabled) error {
 	return nil
 }
 
@@ -72,12 +70,6 @@ func TestServiceHandlerCheckServiceMethodPrototype(t *testing.T) {
 		}
 	})
 
-	t.Run("single return value type wrong", func(t *testing.T) {
-		if err := checkServiceMethodPrototype(reflect.TypeOf(func(*ServiceMethodContext, *struct{}) int { return 0 })); err == nil {
-			t.Error()
-		}
-	})
-
 	t.Run("two return values second type wrong", func(t *testing.T) {
 		if err := checkServiceMethodPrototype(reflect.TypeOf(func(*ServiceMethodContext, *struct{}) (int, int) { return 0, 0 })); err == nil {
 			t.Error()
@@ -104,11 +96,11 @@ func TestServiceHandlerCheckServiceMethodPrototype(t *testing.T) {
 }
 
 func TestServiceHandlerServeHTTP(t *testing.T) {
-	h1, _ := NewServiceHandler(emptyFunction, nil, false)
-	h2, _ := NewServiceHandler(e.errorMethod, nil, false)
-	h3, _ := NewServiceHandler(e.errorResponseMethod, nil, false)
-	h4, _ := NewServiceHandler(e.panicMethod, nil, false)
-	h5, _ := NewServiceHandler(validatorEnabledFunction, nil, false)
+	h1, _ := NewServiceHandler(emptyFunction, nil, false, false)
+	h2, _ := NewServiceHandler(e.errorMethod, nil, false, false)
+	h3, _ := NewServiceHandler(e.errorResponseMethod, nil, false, false)
+	h4, _ := NewServiceHandler(e.panicMethod, nil, false, false)
+	h5, _ := NewServiceHandler(validatorEnabledFunction, nil, false, false)
 
 	emptyFunctionNormalArguments := httptest.NewRequest("POST", "/emptyFunction", strings.NewReader("{}"))
 	emptyFunctionNormalArguments.Header.Add("content-type", "application/json")
