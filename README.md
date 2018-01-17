@@ -39,11 +39,6 @@ func getUser(ctx *kellyframework.ServiceMethodContext, name *userName) interface
     return &userInfo{}
 }
 
-func deleteUser(ctx *kellyframework.ServiceMethodContext, name *userName) error {
-    // do delete user or return error
-    return nil
-}
-
 func main() {
     accessLogFile, err := os.OpenFile("access.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
     if err != nil {
@@ -54,7 +49,6 @@ func main() {
         {Method: "POST", Path: "/user/:Name", Function: addUser},
         {Method: "POST", Path: "/user/", Function: addUser},
         {Method: "GET", Path: "/user/:Name", Function: getUser, BypassRequestBody: true},
-        {Method: "DELETE", Path: "/user/:Name", Function: deleteUser, BypassRequestBody: true},
     }
     loggingServiceRouter, err := kellyframework.NewLoggingHTTPRouter(routes, accessLogFile)
     if err != nil {
@@ -78,9 +72,6 @@ curl -H "Content-Type: application/json" -d '{"Age": 18, "Address": "beijing"}' 
 
 # 获取用户信息
 curl -G http://127.0.0.1:8080/user/test
-
-# 删除用户
-curl -X "DELETE" http://127.0.0.1:8080/user/test
 ```
 **如果函数返回error或者panic了, 该框架会自动封装成HTTP的500错误.**
 
