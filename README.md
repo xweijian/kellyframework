@@ -111,7 +111,7 @@ curl -X "DELETE" http://127.0.0.1:8080/user/test
 
 直接这样定义函数就好了:
 ```go
-func getSomething(_ *kellyframework.ServiceMethodContext, _ *struct{}) (anything, error) {
+func getSomething(_ *kellyframework.ServiceMethodContext, _ *struct{}) anything {
     return anything
 }
 ```
