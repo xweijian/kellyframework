@@ -51,12 +51,12 @@ func NewHTTPRouter(routes []*Route) (*httprouter.Router, error) {
 	return router, nil
 }
 
-func NewLoggingHTTPRouter(routes []*Route, logWriter io.Writer) (http.Handler, error) {
+func NewLoggingHTTPRouter(routes []*Route, loggingHeaders []string, logWriter io.Writer) (http.Handler, error) {
 	router, err := NewHTTPRouter(routes)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewAccessLogDecorator(router, logWriter, ServiceHandlerAccessLogRowFillerContextKey,
+	return NewAccessLogDecorator(router, logWriter, loggingHeaders, ServiceHandlerAccessLogRowFillerContextKey,
 		ServiceHandlerAccessLogRowFillerFactory), nil
 }

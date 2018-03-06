@@ -19,9 +19,10 @@ import (
 
 type ServiceMethodContext struct {
 	Context            context.Context
-	XForwardedFor      string
 	RemoteAddr         string
+	RequestHeader      http.Header
 	RequestBodyReader  io.ReadCloser
+	ResponseHeader     http.Header
 	ResponseBodyWriter io.Writer
 }
 
@@ -204,9 +205,10 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 	out, methodPanic := doServiceMethodCall(h.method, []reflect.Value{
 		reflect.ValueOf(&ServiceMethodContext{
 			r.Context(),
-			r.Header.Get("X-Forwarded-For"),
 			r.RemoteAddr,
+			r.Header,
 			r.Body,
+			rw.Header(),
 			rw,
 		}),
 		arg,

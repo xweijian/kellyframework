@@ -50,7 +50,7 @@ func main() {
         {Method: "POST", Path: "/user/", Function: addUser},
         {Method: "GET", Path: "/user/:Name", Function: getUser, BypassRequestBody: true},
     }
-    loggingServiceRouter, err := kellyframework.NewLoggingHTTPRouter(routes, accessLogFile)
+    loggingServiceRouter, err := kellyframework.NewLoggingHTTPRouter(routes, nil, accessLogFile)
     if err != nil {
         panic(err)
     }
@@ -101,7 +101,7 @@ curl -G http://127.0.0.1:8080/user/test
 ### 我的函数并不关心输入的参数怎么办?
 
 直接这样定义函数就好了:
-```go
+```
 func getSomething(_ *kellyframework.ServiceMethodContext, _ *struct{}) anything {
     return anything
 }
@@ -113,7 +113,7 @@ kellyframework集成了[validator](https://godoc.org/gopkg.in/go-playground/vali
 struct添加各种约束.
 
 例如:
-```go
+```
 type userInfo struct {
     Age int        `validate:"max=140,min=0"`
     Address string
@@ -125,12 +125,13 @@ type userInfo struct {
 ### `kellyframework.ServiceMethodContext`是干吗用的?
 
 这个结构体包含以下字段:
-```go
+```
 type ServiceMethodContext struct {
 	Context            context.Context // 该HTTP请求的context
-	XForwardedFor      string // HTTP的X-Forwarded-For请求头, 通常这意味着真正发起请求的IP地址
 	RemoteAddr         string // 发起请求的远端地址, 有可能是反向代理服务器的IP地址.
+	RequestHeader      http.Header // 请求头, http.Header类型, 各字段都可以读.
 	RequestBodyReader  io.ReadCloser // request body
+	ResponseHeader     http.Header // 响应头, http.Header类型, 可以往里添各种http头的字段.
 	ResponseBodyWriter io.Writer // response body
 }
 ```
