@@ -96,7 +96,7 @@ curl -G http://127.0.0.1:8080/user/test
 
 ### 我想返回自定义的错误码怎么办?
 
-你可以在你的函数中, 返回一个`*kellyframework.ErrorResponse`结构体, 在其中你可以填写你想要的code, msg和data字段内容.
+你可以在你的函数中, 返回一个`*kellyframework.ErrorResponse`结构体, 在其中你可以填写你想要的code, msg和data字段内容, 并且会把code字段赋值给http状态码返回。
 
 ### 我的函数并不关心输入的参数怎么办?
 
