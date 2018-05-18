@@ -22,8 +22,8 @@ func (e *empty) errorMethod(*ServiceMethodContext, *empty) error {
 	return fmt.Errorf("expected error")
 }
 
-func (e *empty) errorResponseMethod(*ServiceMethodContext, *empty) *ErrorResponse {
-	return &ErrorResponse{403, "forbidden", nil}
+func (e *empty) errorResponseMethod(*ServiceMethodContext, *empty) *FormattedResponse {
+	return &FormattedResponse{403, "forbidden", nil}
 }
 
 func (e *empty) panicMethod(*ServiceMethodContext, *empty) interface{} {

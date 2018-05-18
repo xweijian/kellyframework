@@ -38,7 +38,7 @@ type ServiceHandler struct {
 	bypassResponseBody bool
 }
 
-type ErrorResponse struct {
+type FormattedResponse struct {
 	Code int         `json:"code"`
 	Msg  string      `json:"msg"`
 	Data interface{} `json:"data"`
@@ -109,22 +109,25 @@ func NewServiceHandler(method interface{}, loggerContextKey interface{}, bypassR
 	return
 }
 
-func setJSONResponseHeader(w http.ResponseWriter) {
+func setResponseHeader(w http.ResponseWriter) {
 	// Prevents Internet Explorer from MIME-sniffing a response away from the declared content-type
 	w.Header().Set("x-content-type-options", "nosniff")
 	w.Header().Set("Content-Type", "application/json")
 }
 
-func writeJSONResponse(w http.ResponseWriter, tr trace.Trace, data interface{}) {
+func writeResponse(w http.ResponseWriter, tr trace.Trace, data interface{}) {
 	tr.LazyPrintf("%+v", data)
-	setJSONResponseHeader(w)
+	setResponseHeader(w)
 	json.NewEncoder(w).Encode(data)
 }
 
-func writeErrorResponse(w http.ResponseWriter, tr trace.Trace, resp *ErrorResponse) {
+func writeFormattedResponse(w http.ResponseWriter, tr trace.Trace, resp *FormattedResponse) {
 	tr.LazyPrintf("%s: %+v", resp.Msg, resp.Data)
-	tr.SetError()
-	setJSONResponseHeader(w)
+	if resp.Code >= 400 {
+		tr.SetError()
+	}
+	
+	setResponseHeader(w)
 	w.WriteHeader(resp.Code)
 	json.NewEncoder(w).Encode(resp)
 }
@@ -196,7 +199,7 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 	arg := reflect.New(h.method.argType.Elem())
 	err := h.parseArgument(r, params, arg.Interface())
 	if err != nil {
-		writeErrorResponse(rw, tracer, &ErrorResponse{400, "parse argument failed", err.Error()})
+		writeFormattedResponse(rw, tracer, &FormattedResponse{400, "parse argument failed", err.Error()})
 		return
 	}
 
@@ -223,22 +226,22 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 
 	var respData interface{}
 	if methodPanic != nil {
-		respData = &ErrorResponse{500, "service method panicked", methodPanic}
-		writeErrorResponse(rw, tracer, respData.(*ErrorResponse))
+		respData = &FormattedResponse{500, "service method panicked", methodPanic}
+		writeFormattedResponse(rw, tracer, respData.(*FormattedResponse))
 	} else {
 		methodReturn := out[0].Interface()
 		ok := false
-		if respData, ok = methodReturn.(*ErrorResponse); ok {
-			if respData.(*ErrorResponse) != nil {
-				writeErrorResponse(rw, tracer, respData.(*ErrorResponse))
+		if respData, ok = methodReturn.(*FormattedResponse); ok {
+			if respData.(*FormattedResponse) != nil {
+				writeFormattedResponse(rw, tracer, respData.(*FormattedResponse))
 			}
 		} else if err, ok = methodReturn.(error); ok {
-			respData = &ErrorResponse{500, "service method error", err.Error()}
-			writeErrorResponse(rw, tracer, respData.(*ErrorResponse))
+			respData = &FormattedResponse{500, "service method error", err.Error()}
+			writeFormattedResponse(rw, tracer, respData.(*FormattedResponse))
 		} else if !h.bypassResponseBody {
 			// write to response body as JSON encoded string
 			respData = methodReturn
-			writeJSONResponse(rw, tracer, respData)
+			writeResponse(rw, tracer, respData)
 		}
 	}
 

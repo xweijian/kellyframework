@@ -96,7 +96,7 @@ curl -G http://127.0.0.1:8080/user/test
 
 ### 我想返回自定义的错误码怎么办?
 
-你可以在你的函数中, 返回一个`*kellyframework.ErrorResponse`结构体, 在其中你可以填写你想要的code, msg和data字段内容, 并且会把code字段赋值给http状态码返回。
+你可以在你的函数中, 返回一个`*kellyframework.FormattedResponse`结构体, 在其中你可以填写你想要的code, msg和data字段内容, 并且会把code字段赋值给http状态码返回.
 
 ### 我的函数并不关心输入的参数怎么办?
 
@@ -141,6 +141,7 @@ type ServiceMethodContext struct {
 己的函数来解析.
 
 而如果你想自己返回response body, 那么你就应当把`Route.BypassResponseBody`设为true, 这样框架就不会尝试按json格式去encode你返回的结构体.
+注意: 如果你返回的response body是`kellyframework.FormattedResponse`类型或者`error`类型, 框架仍然会按json格式去encode你返回的结构体.
 
 ### access log是否支持自动切分?
 
