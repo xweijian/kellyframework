@@ -11,7 +11,7 @@ imports:
   version: 8b1100835db5bbdae88541510f70d114b91a7e4d
 - name: github.com/julienschmidt/httprouter
   version: e1b9828bc9e5904baec057a154c09ca40fe7fae0
-- name: github.com/Sirupsen/logrus
+- name: github.com/sirupsen/logrus
   version: f006c2ac4710855cf0f916dd6b77acf6b048dc6e
 - name: golang.org/x/crypto
   version: 2509b142fb2b797aa7587dad548f113b2c0f20ce
