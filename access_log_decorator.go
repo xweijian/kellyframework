@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 	"io"
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"strconv"
 	"encoding/json"
 )
