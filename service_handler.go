@@ -1,20 +1,21 @@
 package kellyframework
 
 import (
-	"reflect"
-	"fmt"
-	"net/http"
 	"context"
-	"io"
-	"time"
-	"gopkg.in/go-playground/validator.v9"
 	"encoding/json"
-	"golang.org/x/net/trace"
-	"strconv"
-	"runtime/debug"
-	"github.com/julienschmidt/httprouter"
-	"github.com/gorilla/schema"
+	"fmt"
+	"io"
+	"net/http"
 	"net/url"
+	"reflect"
+	"runtime/debug"
+	"strconv"
+	"time"
+
+	"github.com/gorilla/schema"
+	"github.com/julienschmidt/httprouter"
+	"golang.org/x/net/trace"
+	"gopkg.in/go-playground/validator.v9"
 )
 
 type ServiceMethodContext struct {
@@ -36,6 +37,7 @@ type ServiceHandler struct {
 	validator          *validator.Validate
 	bypassRequestBody  bool
 	bypassResponseBody bool
+	filemode           bool
 }
 
 type FormattedResponse struct {
@@ -75,8 +77,10 @@ func checkServiceMethodPrototype(methodType reflect.Type) error {
 		return fmt.Errorf("the first argument should be type *ServiceMethodContext")
 	}
 
-	if methodType.In(1).Kind() != reflect.Ptr || methodType.In(1).Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("the second argument should be a struct pointer")
+	if methodType.In(1).Kind() != reflect.Ptr ||
+		(methodType.In(1).Elem().Kind() != reflect.Struct &&
+			methodType.In(1).Elem().Kind() != reflect.Slice) {
+		return fmt.Errorf("the second argument should be a struct pointer or array")
 	}
 
 	if methodType.NumOut() != 1 {
@@ -86,12 +90,22 @@ func checkServiceMethodPrototype(methodType reflect.Type) error {
 	return nil
 }
 
+func checkFileModeMethodPrototype(methodType reflect.Type) error {
+	if methodType.In(1).String() != reflect.TypeOf(&[]*File{}).String() {
+		return fmt.Errorf("the second argument must be []*File on the filemode")
+	}
+	return nil
+}
+
 func NewServiceHandler(method interface{}, loggerContextKey interface{}, bypassRequestBody bool,
-	bypassResponseBody bool) (h *ServiceHandler, err error) {
+	bypassResponseBody bool, filemode bool) (h *ServiceHandler, err error) {
 	// the method prototype like this: 'func(*ServiceMethodContext, *struct) (anything)'
 	methodType := reflect.TypeOf(method)
 	err = checkServiceMethodPrototype(methodType)
 	if err != nil {
+		return
+	}
+	if err = checkFileModeMethodPrototype(methodType); err != nil && filemode {
 		return
 	}
 
@@ -104,6 +118,7 @@ func NewServiceHandler(method interface{}, loggerContextKey interface{}, bypassR
 		validator.New(),
 		bypassRequestBody,
 		bypassResponseBody,
+		filemode,
 	}
 
 	return
@@ -126,7 +141,7 @@ func writeFormattedResponse(w http.ResponseWriter, tr trace.Trace, resp *Formatt
 	if resp.Code >= 400 {
 		tr.SetError()
 	}
-	
+
 	setResponseHeader(w)
 	w.WriteHeader(resp.Code)
 	json.NewEncoder(w).Encode(resp)
@@ -147,6 +162,12 @@ func doServiceMethodCall(method *serviceMethod, in []reflect.Value) (out []refle
 }
 
 func (h *ServiceHandler) parseArgument(r *http.Request, params httprouter.Params, arg interface{}) error {
+	if h.filemode {
+		var err error
+		files, _ := arg.(*[]*File)
+		*files, err = handleUploadfile(r)
+		return err
+	}
 	// query string has lowest priority.
 	err := r.ParseForm()
 	if err != nil {
@@ -196,7 +217,8 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 	defer tracer.Finish()
 
 	// extract arguments.
-	arg := reflect.New(h.method.argType.Elem())
+	argType := h.method.argType.Elem()
+	arg := reflect.New(argType)
 	err := h.parseArgument(r, params, arg.Interface())
 	if err != nil {
 		writeFormattedResponse(rw, tracer, &FormattedResponse{400, "parse argument failed", err.Error()})
@@ -265,4 +287,29 @@ func (h *ServiceHandler) ServeHTTPWithParams(rw http.ResponseWriter, r *http.Req
 			logger.Record("methodCallDuration", strconv.FormatFloat(duration.Seconds(), 'f', -1, 64))
 		}
 	}
+}
+
+func handleUploadfile(r *http.Request) ([]*File, error) {
+	reader, err := r.MultipartReader()
+	if err != nil {
+		return nil, err
+	}
+
+	result := []*File{}
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+
+		if part.FileName() != "" {
+			result = append(result,
+				&File{
+					FormName: part.FormName(),
+					FileName: part.FileName(),
+					Content:  part,
+				})
+		}
+	}
+	return result, nil
 }

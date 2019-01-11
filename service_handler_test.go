@@ -1,11 +1,17 @@
 package kellyframework
 
 import (
-	"testing"
-	"strings"
+	"bytes"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http/httptest"
 	"reflect"
+	"strings"
+	"testing"
+
+	"os"
+
 	"github.com/julienschmidt/httprouter"
 )
 
@@ -37,6 +43,13 @@ func emptyFunction(*ServiceMethodContext, *empty) *struct{ A int } {
 
 func validatorEnabledFunction(*ServiceMethodContext, *validatorEnabled) error {
 	return nil
+}
+
+func uploadFileFunction(context *ServiceMethodContext, args *[]*File) error {
+	if len(*args) > 0 {
+		return nil
+	}
+	return fmt.Errorf("error file")
 }
 
 func TestServiceHandlerCheckServiceMethodPrototype(t *testing.T) {
@@ -96,11 +109,12 @@ func TestServiceHandlerCheckServiceMethodPrototype(t *testing.T) {
 }
 
 func TestServiceHandlerServeHTTP(t *testing.T) {
-	h1, _ := NewServiceHandler(emptyFunction, nil, false, false)
-	h2, _ := NewServiceHandler(e.errorMethod, nil, false, false)
-	h3, _ := NewServiceHandler(e.errorResponseMethod, nil, false, false)
-	h4, _ := NewServiceHandler(e.panicMethod, nil, false, false)
-	h5, _ := NewServiceHandler(validatorEnabledFunction, nil, false, false)
+	h1, _ := NewServiceHandler(emptyFunction, nil, false, false, false)
+	h2, _ := NewServiceHandler(e.errorMethod, nil, false, false, false)
+	h3, _ := NewServiceHandler(e.errorResponseMethod, nil, false, false, false)
+	h4, _ := NewServiceHandler(e.panicMethod, nil, false, false, false)
+	h5, _ := NewServiceHandler(validatorEnabledFunction, nil, false, false, false)
+	h6, _ := NewServiceHandler(uploadFileFunction, nil, false, false, true)
 
 	emptyFunctionNormalArguments := httptest.NewRequest("POST", "/emptyFunction", strings.NewReader("{}"))
 	emptyFunctionNormalArguments.Header.Add("content-type", "application/json")
@@ -198,6 +212,25 @@ func TestServiceHandlerServeHTTP(t *testing.T) {
 		h5.ServeHTTP(recorder, validatorEnabledFunctionInvalidQueryString)
 		if recorder.Code != 400 {
 			t.Error("code is not 400, body:", recorder.Body)
+		}
+	})
+
+	bodyBuffer := &bytes.Buffer{}
+	bodyWriter := multipart.NewWriter(bodyBuffer)
+	fileWriter, _ := bodyWriter.CreateFormFile("file", "hosts")
+	file, _ := os.Open("/etc/hosts")
+	defer file.Close()
+	io.Copy(fileWriter, file)
+	contentType := bodyWriter.FormDataContentType()
+	bodyWriter.Close()
+
+	emptyFunctionNormalUploadFile := httptest.NewRequest("POST", "/uploadFileFunction", bodyBuffer)
+	emptyFunctionNormalUploadFile.Header.Add("content-type", contentType)
+	t.Run("norml uploadfile", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		h6.ServeHTTP(recorder, emptyFunctionNormalUploadFile)
+		if recorder.Code != 200 {
+			t.Error("code is not 200, body:", recorder.Body)
 		}
 	})
 }

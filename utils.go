@@ -1,8 +1,9 @@
 package kellyframework
 
 import (
-	"net/http"
 	"io"
+	"net/http"
+
 	"github.com/julienschmidt/httprouter"
 )
 
@@ -26,11 +27,19 @@ type Route struct {
 	Function           interface{}
 	BypassRequestBody  bool
 	BypassResponseBody bool
+	Filemode           bool
+}
+
+type File struct {
+	FormName string
+	FileName string
+	Content  io.Reader
 }
 
 func RegisterFunctionsToHTTPRouter(r *httprouter.Router, loggerContextKey interface{}, routes []*Route) error {
 	for _, rt := range routes {
-		handler, err := NewServiceHandler(rt.Function, loggerContextKey, rt.BypassRequestBody, rt.BypassResponseBody)
+		handler, err := NewServiceHandler(rt.Function, loggerContextKey,
+			rt.BypassRequestBody, rt.BypassResponseBody, rt.Filemode)
 		if err != nil {
 			return err
 		}
